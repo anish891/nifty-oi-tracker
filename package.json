@@ -1,0 +1,17 @@
+{
+  "name": "nifty-oi-tracker",
+  "version": "1.0.0",
+  "description": "Live Nifty 50 Change in OI tracker — ±10 strikes",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js",
+    "dev": "node api/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
