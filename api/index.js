@@ -84,7 +84,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const MAX_STRIKE = atm + 500;
 
   const rows = raw.records.data.filter(r =>
-    r.expiryDate === targetExpiry &&
+    r.expiryDates === targetExpiry &&
     r.strikePrice >= MIN_STRIKE &&
     r.strikePrice <= MAX_STRIKE
   );
