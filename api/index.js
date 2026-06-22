@@ -44,16 +44,21 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     cookies = '';
   }
 
-  const url = `https://www.nseindia.com/api/option-chain-indices?symbol=${symbol}`;
+  const expiry = expiryDate || '23-Jun-2026';
+
+  const url =
+    `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(expiry)}`;
   const res = await fetch(url, {
     headers: { ...NSE_HEADERS, 'Cookie': cookies }
   });
+
 
   if (!res.ok) {
     throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
   }
 
   const raw = await res.json();
+  console.log(JSON.stringify(raw, null, 2));
 
   if (!raw || !raw.records || !raw.records.data) {
     throw new Error('Unexpected NSE response structure');
