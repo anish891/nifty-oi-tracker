@@ -58,6 +58,16 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   }
 
   const raw = await res.json();
+
+  console.log("TOP LEVEL KEYS:", Object.keys(raw));
+
+  if (raw.records) {
+    console.log("RECORD KEYS:", Object.keys(raw.records));
+  }
+
+  console.log("SAMPLE RAW:");
+  console.log(JSON.stringify(raw).slice(0, 3000));
+
   console.log(JSON.stringify(raw, null, 2));
 
   if (!raw || !raw.records || !raw.records.data) {
