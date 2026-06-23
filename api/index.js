@@ -20,6 +20,7 @@ const NSE_HEADERS = {
   'Pragma': 'no-cache',
 };
 
+
 // Simple in-memory cache to avoid hammering NSE (5s TTL)
 let cache = { data: null, ts: 0, expiry: null };
 
