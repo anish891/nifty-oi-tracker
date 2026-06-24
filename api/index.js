@@ -45,7 +45,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     cookies = '';
   }
 
-  const expiry = expiryDate || '23-Jun-2026';
+  const expiry = expiryDate || '30-Jun-2026';
 
   const url =
     `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(expiry)}`;
