@@ -30,110 +30,172 @@ async function fetchNSECookies() {
   return cookies.map(c => c.split(';')[0]).join('; ');
 }
 
+
 async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const now = Date.now();
-  if (cache.data && now - cache.ts < 5000 && (!expiryDate || cache.expiry === expiryDate)) {
+
+  if (
+    cache.data &&
+    now - cache.ts < 5000 &&
+    (!expiryDate || cache.expiry === expiryDate)
+  ) {
     return cache.data;
   }
 
-  // Get cookies first (NSE blocks requests without a valid session cookie)
-  let cookies;
+  let cookies = '';
+
   try {
     cookies = await fetchNSECookies();
   } catch (e) {
     console.error('Cookie fetch failed:', e.message);
-    cookies = '';
   }
 
-  const expiry = expiryDate || '30-Jun-2026';
+  // Bootstrap expiry required by NSE
+  const bootstrapExpiry = expiryDate || '30-Jun-2026';
 
-  const url =
-    `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(expiry)}`;
-  const res = await fetch(url, {
-    headers: { ...NSE_HEADERS, 'Cookie': cookies }
+  let url =
+    `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(bootstrapExpiry)}`;
+
+  let res = await fetch(url, {
+    headers: {
+      ...NSE_HEADERS,
+      Cookie: cookies
+    }
   });
-
 
   if (!res.ok) {
     throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
   }
 
-  const raw = await res.json();
+  let raw = await res.json();
 
-  console.log("TOP LEVEL KEYS:", Object.keys(raw));
-
-  if (raw.records) {
-    console.log("RECORD KEYS:", Object.keys(raw.records));
-  }
-
-  console.log("SAMPLE RAW:");
-  console.log(JSON.stringify(raw).slice(0, 3000));
-
-  console.log(JSON.stringify(raw, null, 2));
-
-  if (!raw || !raw.records || !raw.records.data) {
+  if (!raw?.records?.expiryDates?.length) {
     throw new Error('Unexpected NSE response structure');
   }
 
-  const spot = raw.records.underlyingValue;
-  const allExpiries = raw.records.expiryDates || [];
+  const allExpiries = raw.records.expiryDates;
+
+  // Automatically use the nearest live expiry
   const targetExpiry = expiryDate || allExpiries[0];
 
-  // Filter to target expiry and ±10 strikes around ATM
+  // If target differs from bootstrap, fetch again
+  if (targetExpiry !== bootstrapExpiry) {
+    url =
+      `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(targetExpiry)}`;
+
+    res = await fetch(url, {
+      headers: {
+        ...NSE_HEADERS,
+        Cookie: cookies
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
+    }
+
+    raw = await res.json();
+
+    if (!raw?.records?.data) {
+      throw new Error('Unexpected NSE response structure');
+    }
+  }
+
+  const spot = raw.records.underlyingValue || 0;
+
   const atm = Math.round(spot / 50) * 50;
-  const MIN_STRIKE = atm - 500; // 10 strikes × 50
+  const MIN_STRIKE = atm - 500;
   const MAX_STRIKE = atm + 500;
 
-  const rows = raw.records.data.filter(r =>
-    r.expiryDates === targetExpiry &&
-    r.strikePrice >= MIN_STRIKE &&
-    r.strikePrice <= MAX_STRIKE
-  );
+  const rows = (raw.records.data || []).filter(r => {
+    const rowExpiry = r.expiryDate || r.expiryDates;
 
-  // Build a map keyed by strike
-  const strikeMap = {};
-  rows.forEach(r => {
-    const s = r.strikePrice;
-    if (!strikeMap[s]) strikeMap[s] = { strike: s };
-    if (r.CE) strikeMap[s].CE = r.CE;
-    if (r.PE) strikeMap[s].PE = r.PE;
+    return (
+      rowExpiry === targetExpiry &&
+      r.strikePrice >= MIN_STRIKE &&
+      r.strikePrice <= MAX_STRIKE
+    );
   });
 
-  const strikes = Object.values(strikeMap).sort((a, b) => a.strike - b.strike);
+  const strikeMap = {};
 
-  // Compute totals for metrics
-  let totalCallOI = 0, totalPutOI = 0;
-  let totalCallChgOI = 0, totalPutChgOI = 0;
-  let maxCallOI = 0, maxPutOI = 0;
-  let maxCallOIStrike = atm, maxPutOIStrike = atm;
-  let maxCallChgOI = -Infinity, maxPutChgOI = -Infinity;
-  let maxCallChgStrike = atm, maxPutChgStrike = atm;
+  rows.forEach(r => {
+    const strike = r.strikePrice;
+
+    if (!strikeMap[strike]) {
+      strikeMap[strike] = {
+        strike
+      };
+    }
+
+    if (r.CE) strikeMap[strike].CE = r.CE;
+    if (r.PE) strikeMap[strike].PE = r.PE;
+  });
+
+  const strikes = Object.values(strikeMap).sort(
+    (a, b) => a.strike - b.strike
+  );
+
+  let totalCallOI = 0;
+  let totalPutOI = 0;
+  let totalCallChgOI = 0;
+  let totalPutChgOI = 0;
+
+  let maxCallOI = 0;
+  let maxPutOI = 0;
+  let maxCallOIStrike = atm;
+  let maxPutOIStrike = atm;
+
+  let maxCallChgOI = -Infinity;
+  let maxPutChgOI = -Infinity;
+  let maxCallChgStrike = atm;
+  let maxPutChgStrike = atm;
 
   strikes.forEach(s => {
     const cOI = s.CE?.openInterest || 0;
     const pOI = s.PE?.openInterest || 0;
+
     const cChg = s.CE?.changeinOpenInterest || 0;
     const pChg = s.PE?.changeinOpenInterest || 0;
 
     totalCallOI += cOI;
     totalPutOI += pOI;
+
     totalCallChgOI += cChg;
     totalPutChgOI += pChg;
 
-    if (cOI > maxCallOI) { maxCallOI = cOI; maxCallOIStrike = s.strike; }
-    if (pOI > maxPutOI) { maxPutOI = pOI; maxPutOIStrike = s.strike; }
-    if (cChg > maxCallChgOI) { maxCallChgOI = cChg; maxCallChgStrike = s.strike; }
-    if (pChg > maxPutChgOI) { maxPutChgOI = pChg; maxPutChgStrike = s.strike; }
+    if (cOI > maxCallOI) {
+      maxCallOI = cOI;
+      maxCallOIStrike = s.strike;
+    }
+
+    if (pOI > maxPutOI) {
+      maxPutOI = pOI;
+      maxPutOIStrike = s.strike;
+    }
+
+    if (cChg > maxCallChgOI) {
+      maxCallChgOI = cChg;
+      maxCallChgStrike = s.strike;
+    }
+
+    if (pChg > maxPutChgOI) {
+      maxPutChgOI = pChg;
+      maxPutChgStrike = s.strike;
+    }
   });
 
-  const pcr = totalCallOI > 0 ? totalPutOI / totalCallOI : 0;
+  const pcr =
+    totalCallOI > 0
+      ? totalPutOI / totalCallOI
+      : 0;
 
   const result = {
     spot,
     atm,
     expiry: targetExpiry,
     allExpiries,
-    pcr: Math.round(pcr * 100) / 100,
+    pcr: Number(pcr.toFixed(2)),
     totalCallOI,
     totalPutOI,
     totalCallChgOI,
@@ -143,10 +205,15 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     maxCallChgStrike,
     maxPutChgStrike,
     strikes,
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: new Date().toISOString()
   };
 
-  cache = { data: result, ts: now, expiry: targetExpiry };
+  cache = {
+    data: result,
+    ts: now,
+    expiry: targetExpiry
+  };
+
   return result;
 }
 
