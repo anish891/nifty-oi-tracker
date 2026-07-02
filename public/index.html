@@ -1,645 +1,926 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Nifty OI Tracker — Live Change in OI</title>
-<style>
-  :root {
-    --bg: #0d0f14;
-    --surface: #141720;
-    --surface2: #1c2030;
-    --border: rgba(255,255,255,0.07);
-    --border2: rgba(255,255,255,0.13);
-    --text: #e8eaf0;
-    --muted: #6b7280;
-    --accent: #3b82f6;
-    --bull: #10b981;
-    --bear: #ef4444;
-    --warn: #f59e0b;
-    --atm-bg: rgba(59,130,246,0.08);
-    --atm-border: rgba(59,130,246,0.3);
-    --font: 'Inter', system-ui, sans-serif;
-    --mono: 'JetBrains Mono', 'Fira Mono', monospace;
-  }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nifty OI Tracker — Live Change in OI</title>
+  <style>
+    :root {
+      --bg: #0d0f14;
+      --surface: #141720;
+      --surface2: #1c2030;
+      --border: rgba(255, 255, 255, 0.07);
+      --border2: rgba(255, 255, 255, 0.13);
+      --text: #e8eaf0;
+      --muted: #6b7280;
+      --accent: #3b82f6;
+      --bull: #10b981;
+      --bear: #ef4444;
+      --warn: #f59e0b;
+      --atm-bg: rgba(59, 130, 246, 0.08);
+      --atm-border: rgba(59, 130, 246, 0.3);
+      --font: 'Inter', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', 'Fira Mono', monospace;
+    }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 13px;
-    min-height: 100vh;
-  }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      min-height: 100vh;
+    }
 
-  /* ── Top bar ── */
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 12px 20px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
-  }
+    /* ── Top bar ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
 
-  .logo {
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    color: var(--text);
-  }
-  .logo span { color: var(--accent); }
+    .logo {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
 
-  .live-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--bull);
-    animation: pulse 1.4s infinite;
-    flex-shrink: 0;
-  }
-  .live-dot.error { background: var(--bear); animation: none; }
-  @keyframes pulse {
-    0%,100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
+    .logo span {
+      color: var(--accent);
+    }
 
-  .status-text {
-    font-size: 11px;
-    color: var(--muted);
-  }
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--bull);
+      animation: pulse 1.4s infinite;
+      flex-shrink: 0;
+    }
 
-  .topbar-right {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
+    .live-dot.error {
+      background: var(--bear);
+      animation: none;
+    }
 
-  select, button {
-    background: var(--surface2);
-    border: 1px solid var(--border2);
-    color: var(--text);
-    border-radius: 6px;
-    padding: 5px 10px;
-    font-size: 12px;
-    cursor: pointer;
-    font-family: var(--font);
-  }
-  select:focus, button:focus { outline: none; border-color: var(--accent); }
-  button:hover { background: #252a3a; }
+    @keyframes pulse {
 
-  .refresh-btn {
-    display: flex; align-items: center; gap: 5px;
-    color: var(--accent);
-    border-color: rgba(59,130,246,0.35);
-  }
+      0%,
+      100% {
+        opacity: 1;
+      }
 
-  .interval-label { font-size: 11px; color: var(--muted); }
+      50% {
+        opacity: 0.3;
+      }
+    }
 
-  /* ── Metrics row ── */
-  .metrics {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 1px;
-    background: var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-  .metric {
-    background: var(--surface);
-    padding: 10px 14px;
-  }
-  .metric .label {
-    font-size: 10px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 4px;
-  }
-  .metric .val {
-    font-size: 18px;
-    font-weight: 600;
-    font-family: var(--mono);
-    letter-spacing: -0.02em;
-  }
-  .metric .sub {
-    font-size: 10px;
-    color: var(--muted);
-    margin-top: 2px;
-  }
-  .bull { color: var(--bull); }
-  .bear { color: var(--bear); }
-  .warn { color: var(--warn); }
-  .acc { color: var(--accent); }
+    .status-text {
+      font-size: 11px;
+      color: var(--muted);
+    }
 
-  /* ── PCR bar ── */
-  .pcr-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 20px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    font-size: 11px;
-  }
-  .pcr-label { color: var(--muted); min-width: 55px; }
-  .pcr-track {
-    flex: 1;
-    height: 5px;
-    background: var(--surface2);
-    border-radius: 3px;
-    overflow: hidden;
-    max-width: 300px;
-  }
-  .pcr-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.5s ease, background 0.5s ease;
-  }
-  .pcr-val { font-weight: 600; font-family: var(--mono); min-width: 32px; }
-  .pcr-sent { font-weight: 500; min-width: 55px; }
+    .topbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
 
-  /* ── Expiry info ── */
-  .expiry-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 20px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    font-size: 11px;
-    color: var(--muted);
-  }
-  .expiry-badge {
-    background: rgba(59,130,246,0.12);
-    color: var(--accent);
-    border-radius: 4px;
-    padding: 2px 8px;
-    font-weight: 500;
-  }
+    select,
+    button {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: var(--font);
+    }
 
-  /* ── Table ── */
-  .table-wrap {
-    overflow-x: auto;
-    padding: 0 0 80px;
-  }
+    select:focus,
+    button:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 860px;
-  }
+    button:hover {
+      background: #252a3a;
+    }
 
-  /* Section headers */
-  .thead-section th {
-    padding: 6px 10px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    border-bottom: 1px solid var(--border);
-  }
-  .call-head { background: rgba(239,68,68,0.06); color: #f87171; text-align: center; }
-  .strike-head { background: var(--surface2); color: var(--muted); text-align: center; width: 90px; }
-  .put-head { background: rgba(16,185,129,0.06); color: #34d399; text-align: center; }
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--accent);
+      border-color: rgba(59, 130, 246, 0.35);
+    }
 
-  .thead-cols th {
-    padding: 7px 10px;
-    font-size: 10px;
-    font-weight: 500;
-    color: var(--muted);
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-    background: var(--surface);
-    cursor: pointer;
-    user-select: none;
-  }
-  .thead-cols th:hover { color: var(--text); }
-  .thead-cols th.right { text-align: right; }
-  .thead-cols th.center { text-align: center; }
-  .sort-asc::after { content: ' ↑'; color: var(--accent); }
-  .sort-desc::after { content: ' ↓'; color: var(--accent); }
+    .interval-label {
+      font-size: 11px;
+      color: var(--muted);
+    }
 
-  tbody tr {
-    border-bottom: 1px solid var(--border);
-    transition: background 0.1s;
-  }
-  tbody tr:hover { background: rgba(255,255,255,0.025); }
-  tbody tr.atm-row { background: var(--atm-bg); }
-  tbody tr.atm-row td.strike-cell { border-left: 2px solid var(--atm-border); border-right: 2px solid var(--atm-border); }
+    /* ── Metrics row ── */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border-bottom: 1px solid var(--border);
+    }
 
-  td {
-    padding: 7px 10px;
-    font-family: var(--mono);
-    font-size: 12px;
-    white-space: nowrap;
-    color: var(--text);
-  }
-  td.right { text-align: right; }
-  td.center { text-align: center; }
-  td.muted { color: var(--muted); }
+    .metric {
+      background: var(--surface);
+      padding: 10px 14px;
+    }
 
-  .strike-cell {
-    text-align: center;
-    font-weight: 600;
-    font-size: 13px;
-    background: var(--surface);
-    border-left: 1px solid var(--border2);
-    border-right: 1px solid var(--border2);
-    color: var(--text);
-  }
-  .atm-tag {
-    display: inline-block;
-    font-size: 8px;
-    font-family: var(--font);
-    background: var(--accent);
-    color: #fff;
-    border-radius: 3px;
-    padding: 1px 4px;
-    margin-left: 4px;
-    vertical-align: middle;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-  }
+    .metric .label {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
 
-  /* OI bar inline */
-  .oi-bar-row { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
-  .oi-bar-row.left { justify-content: flex-start; }
-  .bar-track { width: 50px; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
-  .bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
-  .call-fill { background: rgba(239,68,68,0.7); }
-  .put-fill { background: rgba(16,185,129,0.7); }
+    .metric .val {
+      font-size: 18px;
+      font-weight: 600;
+      font-family: var(--mono);
+      letter-spacing: -0.02em;
+    }
 
-  /* Chg OI pill */
-  .chg-val { font-weight: 600; min-width: 55px; display: inline-block; text-align: right; }
-  .chg-val.pos { color: var(--bull); }
-  .chg-val.neg { color: var(--bear); }
-  .chg-val.zero { color: var(--muted); }
+    .metric .sub {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
 
-  /* Buildup badge */
-  .bd {
-    display: inline-block;
-    font-size: 9px;
-    font-family: var(--font);
-    border-radius: 3px;
-    padding: 1px 5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    white-space: nowrap;
-  }
-  .bd-lb { background: rgba(16,185,129,0.15); color: #34d399; }
-  .bd-sb { background: rgba(239,68,68,0.15); color: #f87171; }
-  .bd-lu { background: rgba(245,158,11,0.15); color: #fbbf24; }
-  .bd-sc { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+    .bull {
+      color: var(--bull);
+    }
 
-  /* ── Footer ── */
-  .footer {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 8px 20px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    font-size: 11px;
-    color: var(--muted);
-    flex-wrap: wrap;
-  }
-  .footer .legend {
-    display: flex;
-    gap: 14px;
-    flex-wrap: wrap;
-  }
-  .leg-item { display: flex; align-items: center; gap: 5px; }
-  .leg-dot { width: 8px; height: 8px; border-radius: 2px; }
-  .countdown {
-    margin-left: auto;
-    font-family: var(--mono);
-    font-size: 11px;
-  }
-  .countdown span { color: var(--accent); font-weight: 600; }
+    .bear {
+      color: var(--bear);
+    }
 
-  /* ── Loading / error overlay ── */
-  #overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(13,15,20,0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    flex-direction: column;
-    gap: 12px;
-  }
-  #overlay.hidden { display: none; }
-  .spinner {
-    width: 28px; height: 28px;
-    border: 2px solid var(--border2);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .overlay-msg { color: var(--muted); font-size: 13px; }
+    .warn {
+      color: var(--warn);
+    }
 
-  /* ── Highlighted row flash ── */
-  @keyframes flashBull { 0%,100%{} 30%{background:rgba(16,185,129,0.15);} }
-  @keyframes flashBear { 0%,100%{} 30%{background:rgba(239,68,68,0.12);} }
-  .flash-bull { animation: flashBull 0.7s ease; }
-  .flash-bear { animation: flashBear 0.7s ease; }
-</style>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    .acc {
+      color: var(--accent);
+    }
+
+    /* ── PCR bar ── */
+    .pcr-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+    }
+
+    .pcr-label {
+      color: var(--muted);
+      min-width: 55px;
+    }
+
+    .pcr-track {
+      flex: 1;
+      height: 5px;
+      background: var(--surface2);
+      border-radius: 3px;
+      overflow: hidden;
+      max-width: 300px;
+    }
+
+    .pcr-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.5s ease, background 0.5s ease;
+    }
+
+    .pcr-val {
+      font-weight: 600;
+      font-family: var(--mono);
+      min-width: 32px;
+    }
+
+    .pcr-sent {
+      font-weight: 500;
+      min-width: 55px;
+    }
+
+    /* ── Expiry info ── */
+    .expiry-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 20px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .expiry-badge {
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-weight: 500;
+    }
+
+    /* ── Table ── */
+    .table-wrap {
+      overflow-x: auto;
+      padding: 0 0 80px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 860px;
+    }
+
+    /* Section headers */
+    .thead-section th {
+      padding: 6px 10px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .call-head {
+      background: rgba(239, 68, 68, 0.06);
+      color: #f87171;
+      text-align: center;
+    }
+
+    .strike-head {
+      background: var(--surface2);
+      color: var(--muted);
+      text-align: center;
+      width: 90px;
+    }
+
+    .put-head {
+      background: rgba(16, 185, 129, 0.06);
+      color: #34d399;
+      text-align: center;
+    }
+
+    .thead-cols th {
+      padding: 7px 10px;
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      background: var(--surface);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .thead-cols th:hover {
+      color: var(--text);
+    }
+
+    .thead-cols th.right {
+      text-align: right;
+    }
+
+    .thead-cols th.center {
+      text-align: center;
+    }
+
+    .sort-asc::after {
+      content: ' ↑';
+      color: var(--accent);
+    }
+
+    .sort-desc::after {
+      content: ' ↓';
+      color: var(--accent);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    tbody tr.atm-row {
+      background: var(--atm-bg);
+    }
+
+    tbody tr.atm-row td.strike-cell {
+      border-left: 2px solid var(--atm-border);
+      border-right: 2px solid var(--atm-border);
+    }
+
+    td {
+      padding: 7px 10px;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    td.right {
+      text-align: right;
+    }
+
+    td.center {
+      text-align: center;
+    }
+
+    td.muted {
+      color: var(--muted);
+    }
+
+    .strike-cell {
+      text-align: center;
+      font-weight: 600;
+      font-size: 13px;
+      background: var(--surface);
+      border-left: 1px solid var(--border2);
+      border-right: 1px solid var(--border2);
+      color: var(--text);
+    }
+
+    .atm-tag {
+      display: inline-block;
+      font-size: 8px;
+      font-family: var(--font);
+      background: var(--accent);
+      color: #fff;
+      border-radius: 3px;
+      padding: 1px 4px;
+      margin-left: 4px;
+      vertical-align: middle;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    /* OI bar inline */
+    .oi-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .oi-bar-row.left {
+      justify-content: flex-start;
+    }
+
+    .bar-track {
+      width: 50px;
+      height: 4px;
+      background: var(--surface2);
+      border-radius: 2px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.5s ease;
+    }
+
+    .call-fill {
+      background: rgba(239, 68, 68, 0.7);
+    }
+
+    .put-fill {
+      background: rgba(16, 185, 129, 0.7);
+    }
+
+    /* Chg OI pill */
+    .chg-val {
+      font-weight: 600;
+      min-width: 55px;
+      display: inline-block;
+      text-align: right;
+    }
+
+    .chg-val.pos {
+      color: var(--bull);
+    }
+
+    .chg-val.neg {
+      color: var(--bear);
+    }
+
+    .chg-val.zero {
+      color: var(--muted);
+    }
+
+    /* Buildup badge */
+    .bd {
+      display: inline-block;
+      font-size: 9px;
+      font-family: var(--font);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .bd-lb {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+    }
+
+    .bd-sb {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+    }
+
+    .bd-lu {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+    }
+
+    .bd-sc {
+      background: rgba(139, 92, 246, 0.15);
+      color: #c4b5fd;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 8px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 11px;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+
+    .footer .legend {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .leg-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+
+    .countdown {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .countdown span {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* ── Loading / error overlay ── */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 15, 20, 0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    #overlay.hidden {
+      display: none;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 2px solid var(--border2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .overlay-msg {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* ── Highlighted row flash ── */
+    @keyframes flashBull {
+
+      0%,
+      100% {}
+
+      30% {
+        background: rgba(16, 185, 129, 0.15);
+      }
+    }
+
+    @keyframes flashBear {
+
+      0%,
+      100% {}
+
+      30% {
+        background: rgba(239, 68, 68, 0.12);
+      }
+    }
+
+    .flash-bull {
+      animation: flashBull 0.7s ease;
+    }
+
+    .flash-bear {
+      animation: flashBear 0.7s ease;
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap"
+    rel="stylesheet">
 </head>
+
 <body>
 
-<div id="overlay">
-  <div class="spinner"></div>
-  <div class="overlay-msg">Connecting to NSE…</div>
-</div>
-
-<!-- Top bar -->
-<div class="topbar">
-  <div class="logo">Nifty <span>OI</span> Tracker</div>
-  <div class="live-dot" id="liveDot"></div>
-  <div class="status-text" id="statusText">Connecting…</div>
-
-  <div class="topbar-right">
-    <label class="interval-label">Expiry</label>
-    <select id="expirySelect" onchange="onExpiryChange()">
-      <option value="">Loading…</option>
-    </select>
-    <label class="interval-label">Refresh</label>
-    <select id="intervalSelect" onchange="onIntervalChange()">
-      <option value="3000">3s</option>
-      <option value="5000" selected>5s</option>
-      <option value="10000">10s</option>
-      <option value="30000">30s</option>
-    </select>
-    <button class="refresh-btn" onclick="fetchNow()">↻ Refresh now</button>
+  <div id="overlay">
+    <div class="spinner"></div>
+    <div class="overlay-msg">Connecting to NSE…</div>
   </div>
-</div>
 
-<!-- Metrics -->
-<div class="metrics" id="metricsRow">
-  <div class="metric"><div class="label">Spot</div><div class="val acc" id="mSpot">—</div></div>
-  <div class="metric"><div class="label">ATM Strike</div><div class="val" id="mATM">—</div></div>
-  <div class="metric"><div class="label">PCR (OI)</div><div class="val" id="mPCR">—</div><div class="sub" id="mPCRsub">—</div></div>
-  <div class="metric"><div class="label">Total Call OI</div><div class="val bear" id="mCallOI">—</div><div class="sub" id="mCallChg">—</div></div>
-  <div class="metric"><div class="label">Total Put OI</div><div class="val bull" id="mPutOI">—</div><div class="sub" id="mPutChg">—</div></div>
-  <div class="metric"><div class="label">Max Call OI at</div><div class="val bear" id="mMaxCall">—</div><div class="sub">resistance</div></div>
-  <div class="metric"><div class="label">Max Put OI at</div><div class="val bull" id="mMaxPut">—</div><div class="sub">support</div></div>
-  <div class="metric"><div class="label">Last updated</div><div class="val" id="mTime" style="font-size:13px;">—</div></div>
-</div>
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="logo">Nifty <span>OI</span> Tracker</div>
+    <div class="live-dot" id="liveDot"></div>
+    <div class="status-text" id="statusText">Connecting…</div>
 
-<!-- PCR bar -->
-<div class="pcr-row">
-  <span class="pcr-label">PCR (OI)</span>
-  <div class="pcr-track"><div class="pcr-fill" id="pcrFill" style="width:50%"></div></div>
-  <span class="pcr-val" id="pcrVal">—</span>
-  <span class="pcr-sent" id="pcrSent">—</span>
-  <span style="margin-left:auto; color:var(--muted); font-size:10px;">Bullish &gt;1.2 · Neutral 0.8–1.2 · Bearish &lt;0.8</span>
-</div>
-
-<!-- Expiry info -->
-<div class="expiry-row">
-  <span>Viewing expiry:</span>
-  <span class="expiry-badge" id="expiryLabel">—</span>
-  <span>| ±10 strikes around ATM | All OI values in contracts</span>
-</div>
-
-<!-- Table -->
-<div class="table-wrap">
-  <table id="chainTable">
-    <thead>
-      <tr class="thead-section">
-        <th colspan="5" class="call-head">CALLS</th>
-        <th class="strike-head">STRIKE</th>
-        <th colspan="5" class="put-head">PUTS</th>
-      </tr>
-      <tr class="thead-cols">
-        <th class="right" onclick="sortTable('callChgOI')">Chg OI</th>
-        <th class="right" onclick="sortTable('callOI')">OI</th>
-        <th class="right" onclick="sortTable('callIV')">IV%</th>
-        <th class="right" onclick="sortTable('callLTP')">LTP</th>
-        <th class="right" onclick="sortTable('callBid')">Bid/Ask</th>
-        <th class="center">Strike</th>
-        <th class="right" onclick="sortTable('putBid')">Bid/Ask</th>
-        <th class="right" onclick="sortTable('putLTP')">LTP</th>
-        <th class="right" onclick="sortTable('putIV')">IV%</th>
-        <th class="right" onclick="sortTable('putOI')">OI</th>
-        <th class="right" onclick="sortTable('putChgOI')">Chg OI</th>
-      </tr>
-    </thead>
-    <tbody id="chainBody">
-      <tr><td colspan="11" style="text-align:center;color:var(--muted);padding:40px;">Loading data…</td></tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- Footer legend -->
-<div class="footer">
-  <div class="legend">
-    <span class="leg-item"><span class="leg-dot" style="background:rgba(16,185,129,0.7)"></span> Long buildup (bullish)</span>
-    <span class="leg-item"><span class="leg-dot" style="background:rgba(239,68,68,0.7)"></span> Short buildup (bearish)</span>
-    <span class="leg-item"><span class="leg-dot" style="background:rgba(245,158,11,0.7)"></span> Long unwinding</span>
-    <span class="leg-item"><span class="leg-dot" style="background:rgba(139,92,246,0.7)"></span> Short covering</span>
+    <div class="topbar-right">
+      <label class="interval-label">Expiry</label>
+      <select id="expirySelect" onchange="onExpiryChange()">
+        <option value="">Loading…</option>
+      </select>
+      <label class="interval-label">Refresh</label>
+      <select id="intervalSelect" onchange="onIntervalChange()">
+        <option value="1500" selected>1.5s</option>
+        <option value="3000">3s</option>
+        <option value="5000">5s</option>
+        <option value="10000">10s</option>
+      </select>
+      <button class="refresh-btn" onclick="fetchNow(); cdRemaining = intervalMs / 1000;">
+        ↻ Refresh now
+      </button>
+    </div>
   </div>
-  <div class="countdown">Next refresh in <span id="cdTimer">5</span>s</div>
-</div>
 
-<script>
-const API = '/api/option-chain';
-let currentData = null;
-let prevData = null;
-let intervalMs = 5000;
-let timer = null;
-let cdInterval = null;
-let sortCol = null;
-let sortDir = -1;
-let selectedExpiry = null;
-let cdRemaining = 5;
+  <!-- Metrics -->
+  <div class="metrics" id="metricsRow">
+    <div class="metric">
+      <div class="label">Spot</div>
+      <div class="val acc" id="mSpot">—</div>
+    </div>
+    <div class="metric">
+      <div class="label">ATM Strike</div>
+      <div class="val" id="mATM">—</div>
+    </div>
+    <div class="metric">
+      <div class="label">PCR (OI)</div>
+      <div class="val" id="mPCR">—</div>
+      <div class="sub" id="mPCRsub">—</div>
+    </div>
+    <div class="metric">
+      <div class="label">Total Call OI</div>
+      <div class="val bear" id="mCallOI">—</div>
+      <div class="sub" id="mCallChg">—</div>
+    </div>
+    <div class="metric">
+      <div class="label">Total Put OI</div>
+      <div class="val bull" id="mPutOI">—</div>
+      <div class="sub" id="mPutChg">—</div>
+    </div>
+    <div class="metric">
+      <div class="label">Max Call OI at</div>
+      <div class="val bear" id="mMaxCall">—</div>
+      <div class="sub">resistance</div>
+    </div>
+    <div class="metric">
+      <div class="label">Max Put OI at</div>
+      <div class="val bull" id="mMaxPut">—</div>
+      <div class="sub">support</div>
+    </div>
+    <div class="metric">
+      <div class="label">Last updated</div>
+      <div class="val" id="mTime" style="font-size:13px;">—</div>
+    </div>
+  </div>
 
-function fmt(n) {
-  if (n === undefined || n === null || isNaN(n)) return '—';
-  return n.toLocaleString('en-IN');
-}
-function fmtK(n) {
-  if (!n && n !== 0) return '—';
-  if (Math.abs(n) >= 100000) return (n/100000).toFixed(2) + 'L';
-  if (Math.abs(n) >= 1000) return (n/1000).toFixed(1) + 'K';
-  return n.toLocaleString('en-IN');
-}
-function fmtChg(v) {
-  if (v === undefined || v === null || isNaN(v)) return '—';
-  const s = (v > 0 ? '+' : '') + fmtK(v);
-  return s;
-}
-function pct(v, max) {
-  return max > 0 ? Math.min(100, Math.round(Math.abs(v) / max * 100)) : 0;
-}
-function timeStr(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
+  <!-- PCR bar -->
+  <div class="pcr-row">
+    <span class="pcr-label">PCR (OI)</span>
+    <div class="pcr-track">
+      <div class="pcr-fill" id="pcrFill" style="width:50%"></div>
+    </div>
+    <span class="pcr-val" id="pcrVal">—</span>
+    <span class="pcr-sent" id="pcrSent">—</span>
+    <span style="margin-left:auto; color:var(--muted); font-size:10px;">Bullish &gt;1.2 · Neutral 0.8–1.2 · Bearish
+      &lt;0.8</span>
+  </div>
 
-function buildup(chgOI, chgPrice, isCall) {
-  const oiUp = chgOI > 0;
-  const priceUp = chgPrice > 0;
-  if (isCall) {
-    if (oiUp && priceUp) return { label: 'LONG BUILD', cls: 'bd-lb' };
-    if (oiUp && !priceUp) return { label: 'SHORT BUILD', cls: 'bd-sb' };
-    if (!oiUp && priceUp) return { label: 'SHORT COV', cls: 'bd-sc' };
-    return { label: 'LONG UNWD', cls: 'bd-lu' };
-  } else {
-    if (oiUp && !priceUp) return { label: 'LONG BUILD', cls: 'bd-lb' };
-    if (oiUp && priceUp) return { label: 'SHORT BUILD', cls: 'bd-sb' };
-    if (!oiUp && !priceUp) return { label: 'SHORT COV', cls: 'bd-sc' };
-    return { label: 'LONG UNWD', cls: 'bd-lu' };
-  }
-}
+  <!-- Expiry info -->
+  <div class="expiry-row">
+    <span>Viewing expiry:</span>
+    <span class="expiry-badge" id="expiryLabel">—</span>
+    <span>| ±10 strikes around ATM | All OI values in contracts</span>
+  </div>
 
-async function fetchNow() {
-  const url = selectedExpiry ? `${API}?expiry=${encodeURIComponent(selectedExpiry)}` : API;
-  try {
-    const r = await fetch(url);
-    const json = await r.json();
-    if (!json.ok) throw new Error(json.error);
-    prevData = currentData;
-    currentData = json.data;
-    hideOverlay();
-    renderAll();
-    setLive(true);
-  } catch (e) {
-    setLive(false);
-    document.getElementById('statusText').textContent = 'Error: ' + e.message;
-    if (!currentData) showOverlay('NSE unavailable. Retrying…');
-    console.error(e);
-  }
-}
+  <!-- Table -->
+  <div class="table-wrap">
+    <table id="chainTable">
+      <thead>
+        <tr class="thead-section">
+          <th colspan="5" class="call-head">CALLS</th>
+          <th class="strike-head">STRIKE</th>
+          <th colspan="5" class="put-head">PUTS</th>
+        </tr>
+        <tr class="thead-cols">
+          <th class="right" onclick="sortTable('callChgOI')">Chg OI</th>
+          <th class="right" onclick="sortTable('callOI')">OI</th>
+          <th class="right" onclick="sortTable('callIV')">IV%</th>
+          <th class="right" onclick="sortTable('callLTP')">LTP</th>
+          <th class="right" onclick="sortTable('callBid')">Bid/Ask</th>
+          <th class="center">Strike</th>
+          <th class="right" onclick="sortTable('putBid')">Bid/Ask</th>
+          <th class="right" onclick="sortTable('putLTP')">LTP</th>
+          <th class="right" onclick="sortTable('putIV')">IV%</th>
+          <th class="right" onclick="sortTable('putOI')">OI</th>
+          <th class="right" onclick="sortTable('putChgOI')">Chg OI</th>
+        </tr>
+      </thead>
+      <tbody id="chainBody">
+        <tr>
+          <td colspan="11" style="text-align:center;color:var(--muted);padding:40px;">Loading data…</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
-function setLive(ok) {
-  const dot = document.getElementById('liveDot');
-  const st = document.getElementById('statusText');
-  dot.classList.toggle('error', !ok);
-  if (ok) st.textContent = 'Live · auto-refresh every ' + (intervalMs/1000) + 's';
-}
+  <!-- Footer legend -->
+  <div class="footer">
+    <div class="legend">
+      <span class="leg-item"><span class="leg-dot" style="background:rgba(16,185,129,0.7)"></span> Long buildup
+        (bullish)</span>
+      <span class="leg-item"><span class="leg-dot" style="background:rgba(239,68,68,0.7)"></span> Short buildup
+        (bearish)</span>
+      <span class="leg-item"><span class="leg-dot" style="background:rgba(245,158,11,0.7)"></span> Long unwinding</span>
+      <span class="leg-item"><span class="leg-dot" style="background:rgba(139,92,246,0.7)"></span> Short covering</span>
+    </div>
+    <div class="countdown">Next refresh in <span id="cdTimer">5</span>s</div>
+  </div>
 
-function showOverlay(msg) {
-  document.getElementById('overlay').classList.remove('hidden');
-  document.querySelector('.overlay-msg').textContent = msg || 'Loading…';
-}
-function hideOverlay() {
-  document.getElementById('overlay').classList.add('hidden');
-}
+  <script>
+    const API = '/api/option-chain';
+    let currentData = null;
+    let prevData = null;
+    let intervalMs = 1500;
+    let timer = null;
+    let cdInterval = null;
+    let sortCol = null;
+    let sortDir = -1;
+    let selectedExpiry = null;
+    let cdRemaining = 5;
+    let fetchInProgress = false;
 
-function renderAll() {
-  if (!currentData) return;
-  const d = currentData;
+    function fmt(n) {
+      if (n === undefined || n === null || isNaN(n)) return '—';
+      return n.toLocaleString('en-IN');
+    }
+    function fmtK(n) {
+      if (!n && n !== 0) return '—';
+      if (Math.abs(n) >= 100000) return (n / 100000).toFixed(2) + 'L';
+      if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return n.toLocaleString('en-IN');
+    }
+    function fmtChg(v) {
+      if (v === undefined || v === null || isNaN(v)) return '—';
+      const s = (v > 0 ? '+' : '') + fmtK(v);
+      return s;
+    }
+    function pct(v, max) {
+      return max > 0 ? Math.min(100, Math.round(Math.abs(v) / max * 100)) : 0;
+    }
+    function timeStr(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
 
-  // Expiry dropdown
-  const sel = document.getElementById('expirySelect');
-  if (sel.options.length <= 1 || sel.options[0].value === '') {
-    sel.innerHTML = d.allExpiries.map(e =>
-      `<option value="${e}" ${e === d.expiry ? 'selected' : ''}>${e}</option>`
-    ).join('');
-  }
-  document.getElementById('expiryLabel').textContent = d.expiry;
+    function buildup(chgOI, chgPrice, isCall) {
+      const oiUp = chgOI > 0;
+      const priceUp = chgPrice > 0;
+      if (isCall) {
+        if (oiUp && priceUp) return { label: 'LONG BUILD', cls: 'bd-lb' };
+        if (oiUp && !priceUp) return { label: 'SHORT BUILD', cls: 'bd-sb' };
+        if (!oiUp && priceUp) return { label: 'SHORT COV', cls: 'bd-sc' };
+        return { label: 'LONG UNWD', cls: 'bd-lu' };
+      } else {
+        if (oiUp && !priceUp) return { label: 'LONG BUILD', cls: 'bd-lb' };
+        if (oiUp && priceUp) return { label: 'SHORT BUILD', cls: 'bd-sb' };
+        if (!oiUp && !priceUp) return { label: 'SHORT COV', cls: 'bd-sc' };
+        return { label: 'LONG UNWD', cls: 'bd-lu' };
+      }
+    }
 
-  // Metrics
-  document.getElementById('mSpot').textContent = fmt(d.spot);
-  document.getElementById('mATM').textContent = fmt(d.atm);
-  const pcrEl = document.getElementById('mPCR');
-  pcrEl.textContent = d.pcr.toFixed(2);
-  pcrEl.className = 'val ' + (d.pcr > 1.2 ? 'bull' : d.pcr < 0.8 ? 'bear' : 'warn');
-  document.getElementById('mPCRsub').textContent = d.pcr > 1.2 ? 'Bullish' : d.pcr < 0.8 ? 'Bearish' : 'Neutral';
-  document.getElementById('mCallOI').textContent = fmtK(d.totalCallOI);
-  document.getElementById('mPutOI').textContent = fmtK(d.totalPutOI);
-  document.getElementById('mCallChg').textContent = 'Chg: ' + fmtChg(d.totalCallChgOI);
-  document.getElementById('mPutChg').textContent = 'Chg: ' + fmtChg(d.totalPutChgOI);
-  document.getElementById('mMaxCall').textContent = fmt(d.maxCallOIStrike);
-  document.getElementById('mMaxPut').textContent = fmt(d.maxPutOIStrike);
-  document.getElementById('mTime').textContent = timeStr(d.fetchedAt);
+    async function fetchNow() {
+      if (fetchInProgress) return;
 
-  // PCR bar
-  const pcr = d.pcr;
-  const pFill = document.getElementById('pcrFill');
-  pFill.style.width = Math.min(100, Math.round(pcr / 2 * 100)) + '%';
-  pFill.style.background = pcr > 1.2 ? '#10b981' : pcr < 0.8 ? '#ef4444' : '#f59e0b';
-  document.getElementById('pcrVal').textContent = pcr.toFixed(2);
-  const sentEl = document.getElementById('pcrSent');
-  if (pcr > 1.2) { sentEl.textContent = 'Bullish'; sentEl.className = 'pcr-sent bull'; }
-  else if (pcr < 0.8) { sentEl.textContent = 'Bearish'; sentEl.className = 'pcr-sent bear'; }
-  else { sentEl.textContent = 'Neutral'; sentEl.className = 'pcr-sent warn'; }
+      fetchInProgress = true;
+      try {
+        const url = selectedExpiry
+          ? `${API}?expiry=${encodeURIComponent(selectedExpiry)}`
+          : API;
 
-  renderTable();
-}
+        const r = await fetch(url);
+        const json = await r.json();
 
-function renderTable() {
-  if (!currentData) return;
-  const d = currentData;
-  let rows = [...d.strikes];
+        if (!json.ok) throw new Error(json.error);
+        prevData = currentData;
+        currentData = json.data;
+        hideOverlay();
+        renderAll();
+        setLive(true);
+      } catch (e) {
+        setLive(false);
+        console.error(e);
+      } finally {
+        fetchInProgress = false;
+      }
+    }
 
-  const maxCallOI = Math.max(...rows.map(r => r.CE?.openInterest || 0));
-  const maxPutOI = Math.max(...rows.map(r => r.PE?.openInterest || 0));
-  const maxCallChg = Math.max(...rows.map(r => Math.abs(r.CE?.changeinOpenInterest || 0)));
-  const maxPutChg = Math.max(...rows.map(r => Math.abs(r.PE?.changeinOpenInterest || 0)));
+    function setLive(ok) {
+      const dot = document.getElementById('liveDot');
+      const st = document.getElementById('statusText');
+      dot.classList.toggle('error', !ok);
+      if (ok) st.textContent = 'Live · auto-refresh every ' + (intervalMs / 1000) + 's';
+    }
 
-  if (sortCol) {
-    rows.sort((a, b) => {
-      const av = getSortVal(a, sortCol);
-      const bv = getSortVal(b, sortCol);
-      return (av - bv) * sortDir;
-    });
-  }
+    function showOverlay(msg) {
+      document.getElementById('overlay').classList.remove('hidden');
+      document.querySelector('.overlay-msg').textContent = msg || 'Loading…';
+    }
+    function hideOverlay() {
+      document.getElementById('overlay').classList.add('hidden');
+    }
 
-  const atm = d.atm;
-  const prevRows = prevData ? prevData.strikes : [];
-  const prevMap = {};
-  prevRows.forEach(r => { prevMap[r.strike] = r; });
+    function renderAll() {
+      if (!currentData) return;
+      const d = currentData;
 
-  const tbody = document.getElementById('chainBody');
-  tbody.innerHTML = rows.map(r => {
-    const ce = r.CE || {};
-    const pe = r.PE || {};
-    const prev = prevMap[r.strike] || {};
-    const prevCE = prev.CE || {};
-    const prevPE = prev.PE || {};
-    const isATM = r.strike === atm;
+      // Expiry dropdown
+      const sel = document.getElementById('expirySelect');
+      if (sel.options.length <= 1 || sel.options[0].value === '') {
+        sel.innerHTML = d.allExpiries.map(e =>
+          `<option value="${e}" ${e === d.expiry ? 'selected' : ''}>${e}</option>`
+        ).join('');
+      }
+      document.getElementById('expiryLabel').textContent = d.expiry;
 
-    const cOI = ce.openInterest || 0;
-    const pOI = pe.openInterest || 0;
-    const cChg = ce.changeinOpenInterest || 0;
-    const pChg = pe.changeinOpenInterest || 0;
-    const cIV = ce.impliedVolatility || 0;
-    const pIV = pe.impliedVolatility || 0;
-    const cLTP = ce.lastPrice || 0;
-    const pLTP = pe.lastPrice || 0;
-    const cBid = ce.bidprice || 0;
-    const cAsk = ce.askPrice || 0;
-    const pBid = pe.bidprice || 0;
-    const pAsk = pe.askPrice || 0;
-    const cChgP = cLTP - (prevCE.lastPrice || cLTP);
-    const pChgP = pLTP - (prevPE.lastPrice || pLTP);
+      // Metrics
+      document.getElementById('mSpot').textContent = fmt(d.spot);
+      document.getElementById('mATM').textContent = fmt(d.atm);
+      const pcrEl = document.getElementById('mPCR');
+      pcrEl.textContent = d.pcr.toFixed(2);
+      pcrEl.className = 'val ' + (d.pcr > 1.2 ? 'bull' : d.pcr < 0.8 ? 'bear' : 'warn');
+      document.getElementById('mPCRsub').textContent = d.pcr > 1.2 ? 'Bullish' : d.pcr < 0.8 ? 'Bearish' : 'Neutral';
+      document.getElementById('mCallOI').textContent = fmtK(d.totalCallOI);
+      document.getElementById('mPutOI').textContent = fmtK(d.totalPutOI);
+      document.getElementById('mCallChg').textContent = 'Chg: ' + fmtChg(d.totalCallChgOI);
+      document.getElementById('mPutChg').textContent = 'Chg: ' + fmtChg(d.totalPutChgOI);
+      document.getElementById('mMaxCall').textContent = fmt(d.maxCallOIStrike);
+      document.getElementById('mMaxPut').textContent = fmt(d.maxPutOIStrike);
+      document.getElementById('mTime').textContent = timeStr(d.fetchedAt);
 
-    const cBD = buildup(cChg, cChgP, true);
-    const pBD = buildup(pChg, pChgP, false);
+      // PCR bar
+      const pcr = d.pcr;
+      const pFill = document.getElementById('pcrFill');
+      pFill.style.width = Math.min(100, Math.round(pcr / 2 * 100)) + '%';
+      pFill.style.background = pcr > 1.2 ? '#10b981' : pcr < 0.8 ? '#ef4444' : '#f59e0b';
+      document.getElementById('pcrVal').textContent = pcr.toFixed(2);
+      const sentEl = document.getElementById('pcrSent');
+      if (pcr > 1.2) { sentEl.textContent = 'Bullish'; sentEl.className = 'pcr-sent bull'; }
+      else if (pcr < 0.8) { sentEl.textContent = 'Bearish'; sentEl.className = 'pcr-sent bear'; }
+      else { sentEl.textContent = 'Neutral'; sentEl.className = 'pcr-sent warn'; }
 
-    const cBarW = pct(cOI, maxCallOI);
-    const pBarW = pct(pOI, maxPutOI);
-    const cChgW = pct(cChg, maxCallChg);
-    const pChgW = pct(pChg, maxPutChg);
+      renderTable();
+    }
 
-    const cChgCls = cChg > 0 ? 'pos' : cChg < 0 ? 'neg' : 'zero';
-    const pChgCls = pChg > 0 ? 'pos' : pChg < 0 ? 'neg' : 'zero';
+    function renderTable() {
+      if (!currentData) return;
+      const d = currentData;
+      let rows = [...d.strikes];
 
-    const flashCls = prevData ? (cChg > (prevCE.changeinOpenInterest || 0) ? 'flash-bull' : '') : '';
+      const maxCallOI = Math.max(...rows.map(r => r.CE?.openInterest || 0));
+      const maxPutOI = Math.max(...rows.map(r => r.PE?.openInterest || 0));
+      const maxCallChg = Math.max(...rows.map(r => Math.abs(r.CE?.changeinOpenInterest || 0)));
+      const maxPutChg = Math.max(...rows.map(r => Math.abs(r.PE?.changeinOpenInterest || 0)));
 
-    return `
+      if (sortCol) {
+        rows.sort((a, b) => {
+          const av = getSortVal(a, sortCol);
+          const bv = getSortVal(b, sortCol);
+          return (av - bv) * sortDir;
+        });
+      }
+
+      const atm = d.atm;
+      const prevRows = prevData ? prevData.strikes : [];
+      const prevMap = {};
+      prevRows.forEach(r => { prevMap[r.strike] = r; });
+
+      const tbody = document.getElementById('chainBody');
+      tbody.innerHTML = rows.map(r => {
+        const ce = r.CE || {};
+        const pe = r.PE || {};
+        const prev = prevMap[r.strike] || {};
+        const prevCE = prev.CE || {};
+        const prevPE = prev.PE || {};
+        const isATM = r.strike === atm;
+
+        const cOI = ce.openInterest || 0;
+        const pOI = pe.openInterest || 0;
+        const cChg = ce.changeinOpenInterest || 0;
+        const pChg = pe.changeinOpenInterest || 0;
+        const cIV = ce.impliedVolatility || 0;
+        const pIV = pe.impliedVolatility || 0;
+        const cLTP = ce.lastPrice || 0;
+        const pLTP = pe.lastPrice || 0;
+        const cBid = ce.bidprice || 0;
+        const cAsk = ce.askPrice || 0;
+        const pBid = pe.bidprice || 0;
+        const pAsk = pe.askPrice || 0;
+        const cChgP = cLTP - (prevCE.lastPrice || cLTP);
+        const pChgP = pLTP - (prevPE.lastPrice || pLTP);
+
+        const cBD = buildup(cChg, cChgP, true);
+        const pBD = buildup(pChg, pChgP, false);
+
+        const cBarW = pct(cOI, maxCallOI);
+        const pBarW = pct(pOI, maxPutOI);
+        const cChgW = pct(cChg, maxCallChg);
+        const pChgW = pct(pChg, maxPutChg);
+
+        const cChgCls = cChg > 0 ? 'pos' : cChg < 0 ? 'neg' : 'zero';
+        const pChgCls = pChg > 0 ? 'pos' : pChg < 0 ? 'neg' : 'zero';
+
+        const flashCls = prevData ? (cChg > (prevCE.changeinOpenInterest || 0) ? 'flash-bull' : '') : '';
+
+        return `
     <tr class="${isATM ? 'atm-row' : ''} ${flashCls}" data-strike="${r.strike}">
       <td class="right">
         <div class="oi-bar-row">
@@ -679,70 +960,71 @@ function renderTable() {
         </div>
       </td>
     </tr>`;
-  }).join('');
+      }).join('');
 
-  // Highlight sort column
-  document.querySelectorAll('.thead-cols th').forEach(th => {
-    th.classList.remove('sort-asc', 'sort-desc');
-  });
-}
+      // Highlight sort column
+      document.querySelectorAll('.thead-cols th').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+      });
+    }
 
-function getSortVal(row, col) {
-  const ce = row.CE || {};
-  const pe = row.PE || {};
-  const map = {
-    callChgOI: ce.changeinOpenInterest || 0,
-    callOI: ce.openInterest || 0,
-    callIV: ce.impliedVolatility || 0,
-    callLTP: ce.lastPrice || 0,
-    callBid: ce.bidprice || 0,
-    putChgOI: pe.changeinOpenInterest || 0,
-    putOI: pe.openInterest || 0,
-    putIV: pe.impliedVolatility || 0,
-    putLTP: pe.lastPrice || 0,
-    putBid: pe.bidprice || 0,
-  };
-  return map[col] !== undefined ? map[col] : row.strike;
-}
+    function getSortVal(row, col) {
+      const ce = row.CE || {};
+      const pe = row.PE || {};
+      const map = {
+        callChgOI: ce.changeinOpenInterest || 0,
+        callOI: ce.openInterest || 0,
+        callIV: ce.impliedVolatility || 0,
+        callLTP: ce.lastPrice || 0,
+        callBid: ce.bidprice || 0,
+        putChgOI: pe.changeinOpenInterest || 0,
+        putOI: pe.openInterest || 0,
+        putIV: pe.impliedVolatility || 0,
+        putLTP: pe.lastPrice || 0,
+        putBid: pe.bidprice || 0,
+      };
+      return map[col] !== undefined ? map[col] : row.strike;
+    }
 
-function sortTable(col) {
-  if (sortCol === col) sortDir *= -1;
-  else { sortCol = col; sortDir = -1; }
-  renderTable();
-}
+    function sortTable(col) {
+      if (sortCol === col) sortDir *= -1;
+      else { sortCol = col; sortDir = -1; }
+      renderTable();
+    }
 
-function startAutoRefresh() {
-  clearInterval(timer);
-  clearInterval(cdInterval);
-  cdRemaining = intervalMs / 1000;
+    function startAutoRefresh() {
+      clearInterval(timer);
+      clearInterval(cdInterval);
+      cdRemaining = intervalMs / 1000;
 
-  timer = setInterval(() => {
+      timer = setInterval(() => {
+        fetchNow();
+        cdRemaining = intervalMs / 1000;
+      }, intervalMs);
+
+      cdInterval = setInterval(() => {
+        cdRemaining = Math.max(0, cdRemaining - 1);
+        document.getElementById('cdTimer').textContent = cdRemaining;
+      }, 1000);
+
+      document.getElementById('cdTimer').textContent = intervalMs / 1000;
+    }
+
+    function onIntervalChange() {
+      intervalMs = parseInt(document.getElementById('intervalSelect').value);
+      setLive(true);
+      startAutoRefresh();
+    }
+
+    function onExpiryChange() {
+      selectedExpiry = document.getElementById('expirySelect').value;
+      fetchNow();
+    }
+
+    // Boot
     fetchNow();
-    cdRemaining = intervalMs / 1000;
-  }, intervalMs);
-
-  cdInterval = setInterval(() => {
-    cdRemaining = Math.max(0, cdRemaining - 1);
-    document.getElementById('cdTimer').textContent = cdRemaining;
-  }, 1000);
-
-  document.getElementById('cdTimer').textContent = intervalMs / 1000;
-}
-
-function onIntervalChange() {
-  intervalMs = parseInt(document.getElementById('intervalSelect').value);
-  setLive(true);
-  startAutoRefresh();
-}
-
-function onExpiryChange() {
-  selectedExpiry = document.getElementById('expirySelect').value;
-  fetchNow();
-}
-
-// Boot
-fetchNow();
-startAutoRefresh();
-</script>
+    startAutoRefresh();
+  </script>
 </body>
+
 </html>
