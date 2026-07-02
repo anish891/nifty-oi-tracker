@@ -21,13 +21,41 @@ const NSE_HEADERS = {
 };
 
 
-// Simple in-memory cache to avoid hammering NSE (5s TTL)
+// Simple in-memory cache to avoid hammering NSE (2.5s TTL)
 let cache = { data: null, ts: 0, expiry: null };
+
+const CACHE_TTL = 2500;
+const COOKIE_TTL = 10 * 60 * 1000;
+
+let cookieCache = {
+  value: '',
+  ts: 0
+};
 
 async function fetchNSECookies() {
   const res = await fetch('https://www.nseindia.com/', { headers: NSE_HEADERS });
   const cookies = res.headers.raw()['set-cookie'] || [];
   return cookies.map(c => c.split(';')[0]).join('; ');
+}
+
+async function getCookies() {
+  const now = Date.now();
+
+  if (
+    cookieCache.value &&
+    now - cookieCache.ts < COOKIE_TTL
+  ) {
+    return cookieCache.value;
+  }
+
+  const cookies = await fetchNSECookies();
+
+  cookieCache = {
+    value: cookies,
+    ts: now
+  };
+
+  return cookies;
 }
 
 
@@ -36,7 +64,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
 
   if (
     cache.data &&
-    now - cache.ts < 5000 &&
+    now - cache.ts < CACHE_TTL &&
     (!expiryDate || cache.expiry === expiryDate)
   ) {
     return cache.data;
@@ -45,7 +73,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   let cookies = '';
 
   try {
-    cookies = await fetchNSECookies();
+    cookies = await getCookies();
   } catch (e) {
     console.error('Cookie fetch failed:', e.message);
   }
@@ -56,14 +84,29 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   let url =
     `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(bootstrapExpiry)}`;
 
+  const controller1 = new AbortController();
+
+  const timeout1 = setTimeout(() => {
+    controller1.abort();
+  }, 5000);
+
   let res = await fetch(url, {
     headers: {
       ...NSE_HEADERS,
       Cookie: cookies
-    }
+    },
+    signal: controller1.signal
   });
 
+  clearTimeout(timeout1);
+
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      cookieCache = {
+        value: '',
+        ts: 0
+      };
+    }
     throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
   }
 
@@ -83,14 +126,29 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     url =
       `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(targetExpiry)}`;
 
-    res = await fetch(url, {
+    const controller1 = new AbortController();
+
+    const timeout1 = setTimeout(() => {
+      controller1.abort();
+    }, 5000);
+
+    let res = await fetch(url, {
       headers: {
         ...NSE_HEADERS,
         Cookie: cookies
-      }
+      },
+      signal: controller1.signal
     });
 
+    clearTimeout(timeout1);
+
     if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        cookieCache = {
+          value: '',
+          ts: 0
+        };
+      }
       throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
     }
 
