@@ -23,11 +23,5 @@
       "src": "/(.*)",
       "dest": "/public/$1"
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/refresh",
-      "schedule": "*/1 * * * *"
-    }
   ]
 }
