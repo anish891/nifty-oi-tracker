@@ -90,15 +90,22 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     controller1.abort();
   }, 5000);
 
-  let res = await fetch(url, {
-    headers: {
-      ...NSE_HEADERS,
-      Cookie: cookies
-    },
-    signal: controller1.signal
-  });
-
-  clearTimeout(timeout1);
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: {
+        ...NSE_HEADERS,
+        Cookie: cookies
+      },
+      signal: controller1.signal
+    });
+  } catch (e) {
+    // If the request fails (e.g. aborts/timeouts), clear cookie cache to recover next time
+    cookieCache = { value: '', ts: 0 };
+    throw e;
+  } finally {
+    clearTimeout(timeout1);
+  }
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
@@ -126,33 +133,39 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     url =
       `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(targetExpiry)}`;
 
-    const controller1 = new AbortController();
+    const controller2 = new AbortController();
 
-    const timeout1 = setTimeout(() => {
-      controller1.abort();
+    const timeout2 = setTimeout(() => {
+      controller2.abort();
     }, 5000);
 
-    let res = await fetch(url, {
-      headers: {
-        ...NSE_HEADERS,
-        Cookie: cookies
-      },
-      signal: controller1.signal
-    });
+    let res2;
+    try {
+      res2 = await fetch(url, {
+        headers: {
+          ...NSE_HEADERS,
+          Cookie: cookies
+        },
+        signal: controller2.signal
+      });
+    } catch (e) {
+      cookieCache = { value: '', ts: 0 };
+      throw e;
+    } finally {
+      clearTimeout(timeout2);
+    }
 
-    clearTimeout(timeout1);
-
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
+    if (!res2.ok) {
+      if (res2.status === 401 || res2.status === 403) {
         cookieCache = {
           value: '',
           ts: 0
         };
       }
-      throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
+      throw new Error(`NSE API returned ${res2.status}: ${res2.statusText}`);
     }
 
-    raw = await res.json();
+    raw = await res2.json();
 
     if (!raw?.records?.data) {
       throw new Error('Unexpected NSE response structure');
