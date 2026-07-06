@@ -59,6 +59,37 @@ async function getCookies() {
 }
 
 
+async function fetchWithTimeout(url, cookies) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 5000);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        ...NSE_HEADERS,
+        Cookie: cookies
+      },
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        cookieCache = { value: '', ts: 0 };
+      }
+      throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
+    }
+
+    return await res.json();
+  } catch (e) {
+    cookieCache = { value: '', ts: 0 };
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const now = Date.now();
 
@@ -84,40 +115,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   let url =
     `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(bootstrapExpiry)}`;
 
-  const controller1 = new AbortController();
-
-  const timeout1 = setTimeout(() => {
-    controller1.abort();
-  }, 5000);
-
-  let res;
-  try {
-    res = await fetch(url, {
-      headers: {
-        ...NSE_HEADERS,
-        Cookie: cookies
-      },
-      signal: controller1.signal
-    });
-  } catch (e) {
-    // If the request fails (e.g. aborts/timeouts), clear cookie cache to recover next time
-    cookieCache = { value: '', ts: 0 };
-    throw e;
-  } finally {
-    clearTimeout(timeout1);
-  }
-
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      cookieCache = {
-        value: '',
-        ts: 0
-      };
-    }
-    throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
-  }
-
-  let raw = await res.json();
+  let raw = await fetchWithTimeout(url, cookies);
 
   if (!raw?.records?.expiryDates?.length) {
     throw new Error('Unexpected NSE response structure');
@@ -133,39 +131,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     url =
       `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(targetExpiry)}`;
 
-    const controller2 = new AbortController();
-
-    const timeout2 = setTimeout(() => {
-      controller2.abort();
-    }, 5000);
-
-    let res2;
-    try {
-      res2 = await fetch(url, {
-        headers: {
-          ...NSE_HEADERS,
-          Cookie: cookies
-        },
-        signal: controller2.signal
-      });
-    } catch (e) {
-      cookieCache = { value: '', ts: 0 };
-      throw e;
-    } finally {
-      clearTimeout(timeout2);
-    }
-
-    if (!res2.ok) {
-      if (res2.status === 401 || res2.status === 403) {
-        cookieCache = {
-          value: '',
-          ts: 0
-        };
-      }
-      throw new Error(`NSE API returned ${res2.status}: ${res2.statusText}`);
-    }
-
-    raw = await res2.json();
+    raw = await fetchWithTimeout(url, cookies);
 
     if (!raw?.records?.data) {
       throw new Error('Unexpected NSE response structure');
