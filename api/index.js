@@ -227,12 +227,37 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
       ? totalPutOI / totalCallOI
       : 0;
 
+  // Calculate Max Pain
+  let maxPain = atm;
+  let minTotalPain = Infinity;
+
+  strikes.forEach(candidate => {
+    let totalPain = 0;
+    strikes.forEach(s => {
+      const cOI = s.CE?.openInterest || 0;
+      const pOI = s.PE?.openInterest || 0;
+
+      if (candidate.strike > s.strike) {
+        totalPain += cOI * (candidate.strike - s.strike);
+      }
+      if (candidate.strike < s.strike) {
+        totalPain += pOI * (s.strike - candidate.strike);
+      }
+    });
+
+    if (totalPain < minTotalPain) {
+      minTotalPain = totalPain;
+      maxPain = candidate.strike;
+    }
+  });
+
   const result = {
     spot,
     atm,
     expiry: targetExpiry,
     allExpiries,
     pcr: Number(pcr.toFixed(2)),
+    maxPain,
     totalCallOI,
     totalPutOI,
     totalCallChgOI,

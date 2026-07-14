@@ -656,6 +656,11 @@
       <div class="sub">support</div>
     </div>
     <div class="metric">
+      <div class="label">Max Pain</div>
+      <div class="val warn" id="mMaxPain">—</div>
+      <div class="sub">expiry target</div>
+    </div>
+    <div class="metric">
       <div class="label">Last updated</div>
       <div class="val" id="mTime" style="font-size:13px;">—</div>
     </div>
@@ -844,6 +849,7 @@
       document.getElementById('mPutChg').textContent = 'Chg: ' + fmtChg(d.totalPutChgOI);
       document.getElementById('mMaxCall').textContent = fmt(d.maxCallOIStrike);
       document.getElementById('mMaxPut').textContent = fmt(d.maxPutOIStrike);
+      document.getElementById('mMaxPain').textContent = fmt(d.maxPain);
       document.getElementById('mTime').textContent = timeStr(d.fetchedAt);
 
       // PCR bar
