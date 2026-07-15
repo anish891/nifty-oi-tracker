@@ -227,6 +227,48 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
       ? totalPutOI / totalCallOI
       : 0;
 
+  // Calculate ATM Straddle expected range
+  const atmStrikeObj = strikes.find(s => s.strike === atm) || strikes[Math.floor(strikes.length / 2)];
+  const atmCE = atmStrikeObj?.CE || {};
+  const atmPE = atmStrikeObj?.PE || {};
+  const atmCELTP = atmCE.lastPrice || 0;
+  const atmPELTP = atmPE.lastPrice || 0;
+  const straddlePrice = atmCELTP + atmPELTP;
+  const upperRange = spot + straddlePrice;
+  const lowerRange = spot - straddlePrice;
+
+  // Calculate Multi-Strike PCR (NTM PCR - ±3 strikes around ATM)
+  const atmIndex = strikes.findIndex(s => s.strike === atm);
+  let ntmCallOI = 0;
+  let ntmPutOI = 0;
+  if (atmIndex !== -1) {
+    const startIndex = Math.max(0, atmIndex - 3);
+    const endIndex = Math.min(strikes.length - 1, atmIndex + 3);
+    for (let i = startIndex; i <= endIndex; i++) {
+      ntmCallOI += strikes[i].CE?.openInterest || 0;
+      ntmPutOI += strikes[i].PE?.openInterest || 0;
+    }
+  }
+  const ntmPcr = ntmCallOI > 0 ? ntmPutOI / ntmCallOI : 0;
+
+  // Calculate Value-Weighted PCR
+  let weightedCallValue = 0;
+  let weightedPutValue = 0;
+  strikes.forEach(s => {
+    weightedCallValue += (s.CE?.openInterest || 0) * (s.CE?.lastPrice || 0);
+    weightedPutValue += (s.PE?.openInterest || 0) * (s.PE?.lastPrice || 0);
+  });
+  const weightedPcr = weightedCallValue > 0 ? weightedPutValue / weightedCallValue : 0;
+
+  // Calculate Support & Resistance Strength (%)
+  const resistanceStrength = totalCallOI > 0 ? (maxCallOI / totalCallOI) * 100 : 0;
+  const supportStrength = totalPutOI > 0 ? (maxPutOI / totalPutOI) * 100 : 0;
+
+  // Calculate ATM IV Skew
+  const atmCeIv = atmCE.impliedVolatility || 0;
+  const atmPeIv = atmPE.impliedVolatility || 0;
+  const ivSkew = atmPeIv - atmCeIv;
+
   // Calculate Max Pain
   let maxPain = atm;
   let minTotalPain = Infinity;
@@ -257,6 +299,14 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     expiry: targetExpiry,
     allExpiries,
     pcr: Number(pcr.toFixed(2)),
+    ntmPcr: Number(ntmPcr.toFixed(2)),
+    weightedPcr: Number(weightedPcr.toFixed(2)),
+    straddlePrice: Number(straddlePrice.toFixed(2)),
+    upperRange: Number(upperRange.toFixed(2)),
+    lowerRange: Number(lowerRange.toFixed(2)),
+    resistanceStrength: Number(resistanceStrength.toFixed(1)),
+    supportStrength: Number(supportStrength.toFixed(1)),
+    ivSkew: Number(ivSkew.toFixed(2)),
     maxPain,
     totalCallOI,
     totalPutOI,

@@ -143,6 +143,27 @@
       border-bottom: 1px solid var(--border);
     }
 
+    @media (max-width: 768px) {
+      .metrics {
+        display: flex;
+        overflow-x: auto;
+        gap: 1px;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+      }
+      .metric {
+        flex: 0 0 135px;
+        scroll-snap-align: start;
+      }
+      .metrics::-webkit-scrollbar {
+        height: 3px;
+      }
+      .metrics::-webkit-scrollbar-thumb {
+        background: var(--border2);
+        border-radius: 2px;
+      }
+    }
+
     .metric {
       background: var(--surface);
       padding: 10px 14px;
@@ -634,6 +655,14 @@
       <div class="label">PCR (OI)</div>
       <div class="val" id="mPCR">—</div>
       <div class="sub" id="mPCRsub">—</div>
+      <div class="sub" style="font-size: 9px; margin-top: 4px; opacity: 0.85; white-space: nowrap;">
+        Near ATM: <span id="mNtmPcr">—</span> | Wtd: <span id="mWeightedPcr">—</span>
+      </div>
+    </div>
+    <div class="metric">
+      <div class="label">Expected Range</div>
+      <div class="val acc" id="mExpectedRange" style="font-size:13px; font-weight:600; line-height:22px;">—</div>
+      <div class="sub">Straddle: <span id="mStraddlePrice">—</span></div>
     </div>
     <div class="metric">
       <div class="label">Total Call OI</div>
@@ -648,12 +677,17 @@
     <div class="metric">
       <div class="label">Max Call OI at</div>
       <div class="val bear" id="mMaxCall">—</div>
-      <div class="sub">resistance</div>
+      <div class="sub">Res (Strength: <span id="mResStrength">—</span>%)</div>
     </div>
     <div class="metric">
       <div class="label">Max Put OI at</div>
       <div class="val bull" id="mMaxPut">—</div>
-      <div class="sub">support</div>
+      <div class="sub">Sup (Strength: <span id="mSupStrength">—</span>%)</div>
+    </div>
+    <div class="metric">
+      <div class="label">IV Skew (ATM)</div>
+      <div class="val" id="mIvSkew">—</div>
+      <div class="sub" id="mIvSkewSub">—</div>
     </div>
     <div class="metric">
       <div class="label">Max Pain</div>
@@ -839,16 +873,56 @@
       // Metrics
       document.getElementById('mSpot').textContent = fmt(d.spot);
       document.getElementById('mATM').textContent = fmt(d.atm);
+      
       const pcrEl = document.getElementById('mPCR');
       pcrEl.textContent = d.pcr.toFixed(2);
       pcrEl.className = 'val ' + (d.pcr > 1.2 ? 'bull' : d.pcr < 0.8 ? 'bear' : 'warn');
       document.getElementById('mPCRsub').textContent = d.pcr > 1.2 ? 'Bullish' : d.pcr < 0.8 ? 'Bearish' : 'Neutral';
+      
+      // Secondary PCR stats
+      document.getElementById('mNtmPcr').textContent = d.ntmPcr !== undefined ? d.ntmPcr.toFixed(2) : '—';
+      document.getElementById('mWeightedPcr').textContent = d.weightedPcr !== undefined ? d.weightedPcr.toFixed(2) : '—';
+
+      // Expected Range
+      if (d.lowerRange && d.upperRange) {
+        document.getElementById('mExpectedRange').textContent = `${fmt(Math.round(d.lowerRange))} - ${fmt(Math.round(d.upperRange))}`;
+      } else {
+        document.getElementById('mExpectedRange').textContent = '—';
+      }
+      document.getElementById('mStraddlePrice').textContent = d.straddlePrice ? fmt(Math.round(d.straddlePrice)) : '—';
+
       document.getElementById('mCallOI').textContent = fmtK(d.totalCallOI);
       document.getElementById('mPutOI').textContent = fmtK(d.totalPutOI);
       document.getElementById('mCallChg').textContent = 'Chg: ' + fmtChg(d.totalCallChgOI);
       document.getElementById('mPutChg').textContent = 'Chg: ' + fmtChg(d.totalPutChgOI);
+      
       document.getElementById('mMaxCall').textContent = fmt(d.maxCallOIStrike);
+      document.getElementById('mResStrength').textContent = d.resistanceStrength !== undefined ? d.resistanceStrength : '—';
+      
       document.getElementById('mMaxPut').textContent = fmt(d.maxPutOIStrike);
+      document.getElementById('mSupStrength').textContent = d.supportStrength !== undefined ? d.supportStrength : '—';
+
+      // ATM IV Skew
+      const skewEl = document.getElementById('mIvSkew');
+      if (d.ivSkew !== undefined) {
+        skewEl.textContent = (d.ivSkew > 0 ? '+' : '') + d.ivSkew.toFixed(1) + '%';
+        skewEl.className = 'val ' + (d.ivSkew > 1 ? 'bull' : d.ivSkew < -1 ? 'bear' : 'warn');
+        const skewSub = document.getElementById('mIvSkewSub');
+        if (d.ivSkew > 1) {
+          skewSub.textContent = 'PE IV higher (Fearful)';
+          skewSub.className = 'sub bull';
+        } else if (d.ivSkew < -1) {
+          skewSub.textContent = 'CE IV higher (Greedy)';
+          skewSub.className = 'sub bear';
+        } else {
+          skewSub.textContent = 'Balanced IV';
+          skewSub.className = 'sub warn';
+        }
+      } else {
+        skewEl.textContent = '—';
+        document.getElementById('mIvSkewSub').textContent = '—';
+      }
+
       document.getElementById('mMaxPain').textContent = fmt(d.maxPain);
       document.getElementById('mTime').textContent = timeStr(d.fetchedAt);
 
