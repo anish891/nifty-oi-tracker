@@ -143,35 +143,29 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const atm = Math.round(spot / 50) * 50;
   const MIN_STRIKE = atm - 500;
   const MAX_STRIKE = atm + 500;
-
-  const rows = (raw.records.data || []).filter(r => {
+  const allExpiryRows = (raw.records.data || []).filter(r => {
     const rowExpiry = r.expiryDate || r.expiryDates;
-
-    return (
-      rowExpiry === targetExpiry &&
-      r.strikePrice >= MIN_STRIKE &&
-      r.strikePrice <= MAX_STRIKE
-    );
+    return rowExpiry === targetExpiry;
   });
 
-  const strikeMap = {};
-
-  rows.forEach(r => {
+  const allExpiryStrikesMap = {};
+  allExpiryRows.forEach(r => {
     const strike = r.strikePrice;
-
-    if (!strikeMap[strike]) {
-      strikeMap[strike] = {
+    if (!allExpiryStrikesMap[strike]) {
+      allExpiryStrikesMap[strike] = {
         strike
       };
     }
-
-    if (r.CE) strikeMap[strike].CE = r.CE;
-    if (r.PE) strikeMap[strike].PE = r.PE;
+    if (r.CE) allExpiryStrikesMap[strike].CE = r.CE;
+    if (r.PE) allExpiryStrikesMap[strike].PE = r.PE;
   });
 
-  const strikes = Object.values(strikeMap).sort(
+  const allExpiryStrikes = Object.values(allExpiryStrikesMap).sort(
     (a, b) => a.strike - b.strike
   );
+
+  // Filter strikes for display table
+  const strikes = allExpiryStrikes.filter(s => s.strike >= MIN_STRIKE && s.strike <= MAX_STRIKE);
 
   let totalCallOI = 0;
   let totalPutOI = 0;
@@ -188,7 +182,8 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   let maxCallChgStrike = atm;
   let maxPutChgStrike = atm;
 
-  strikes.forEach(s => {
+  // Calculate stats on the FULL option chain
+  allExpiryStrikes.forEach(s => {
     const cOI = s.CE?.openInterest || 0;
     const pOI = s.PE?.openInterest || 0;
 
@@ -228,7 +223,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
       : 0;
 
   // Calculate ATM Straddle expected range
-  const atmStrikeObj = strikes.find(s => s.strike === atm) || strikes[Math.floor(strikes.length / 2)];
+  const atmStrikeObj = allExpiryStrikes.find(s => s.strike === atm) || allExpiryStrikes[Math.floor(allExpiryStrikes.length / 2)];
   const atmCE = atmStrikeObj?.CE || {};
   const atmPE = atmStrikeObj?.PE || {};
   const atmCELTP = atmCE.lastPrice || 0;
@@ -237,7 +232,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const upperRange = spot + straddlePrice;
   const lowerRange = spot - straddlePrice;
 
-  // Calculate Multi-Strike PCR (NTM PCR - ±3 strikes around ATM)
+  // Calculate Multi-Strike PCR (NTM PCR - ±3 strikes around ATM in the display subset)
   const atmIndex = strikes.findIndex(s => s.strike === atm);
   let ntmCallOI = 0;
   let ntmPutOI = 0;
@@ -251,16 +246,16 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   }
   const ntmPcr = ntmCallOI > 0 ? ntmPutOI / ntmCallOI : 0;
 
-  // Calculate Value-Weighted PCR
+  // Calculate Value-Weighted PCR (on the full chain)
   let weightedCallValue = 0;
   let weightedPutValue = 0;
-  strikes.forEach(s => {
+  allExpiryStrikes.forEach(s => {
     weightedCallValue += (s.CE?.openInterest || 0) * (s.CE?.lastPrice || 0);
     weightedPutValue += (s.PE?.openInterest || 0) * (s.PE?.lastPrice || 0);
   });
   const weightedPcr = weightedCallValue > 0 ? weightedPutValue / weightedCallValue : 0;
 
-  // Calculate Support & Resistance Strength (%)
+  // Calculate Support & Resistance Strength (%) on full chain
   const resistanceStrength = totalCallOI > 0 ? (maxCallOI / totalCallOI) * 100 : 0;
   const supportStrength = totalPutOI > 0 ? (maxPutOI / totalPutOI) * 100 : 0;
 
@@ -269,13 +264,13 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const atmPeIv = atmPE.impliedVolatility || 0;
   const ivSkew = atmPeIv - atmCeIv;
 
-  // Calculate Max Pain
+  // Calculate Max Pain (on the full chain)
   let maxPain = atm;
   let minTotalPain = Infinity;
 
-  strikes.forEach(candidate => {
+  allExpiryStrikes.forEach(candidate => {
     let totalPain = 0;
-    strikes.forEach(s => {
+    allExpiryStrikes.forEach(s => {
       const cOI = s.CE?.openInterest || 0;
       const pOI = s.PE?.openInterest || 0;
 
