@@ -151,13 +151,16 @@
         scroll-snap-type: x mandatory;
         -webkit-overflow-scrolling: touch;
       }
+
       .metric {
         flex: 0 0 135px;
         scroll-snap-align: start;
       }
+
       .metrics::-webkit-scrollbar {
         height: 3px;
       }
+
       .metrics::-webkit-scrollbar-thumb {
         background: var(--border2);
         border-radius: 2px;
@@ -873,12 +876,12 @@
       // Metrics
       document.getElementById('mSpot').textContent = fmt(d.spot);
       document.getElementById('mATM').textContent = fmt(d.atm);
-      
+
       const pcrEl = document.getElementById('mPCR');
       pcrEl.textContent = d.pcr.toFixed(2);
       pcrEl.className = 'val ' + (d.pcr > 1.2 ? 'bull' : d.pcr < 0.8 ? 'bear' : 'warn');
       document.getElementById('mPCRsub').textContent = d.pcr > 1.2 ? 'Bullish' : d.pcr < 0.8 ? 'Bearish' : 'Neutral';
-      
+
       // Secondary PCR stats
       document.getElementById('mNtmPcr').textContent = d.ntmPcr !== undefined ? d.ntmPcr.toFixed(2) : '—';
       document.getElementById('mWeightedPcr').textContent = d.weightedPcr !== undefined ? d.weightedPcr.toFixed(2) : '—';
@@ -895,10 +898,10 @@
       document.getElementById('mPutOI').textContent = fmtK(d.totalPutOI);
       document.getElementById('mCallChg').textContent = 'Chg: ' + fmtChg(d.totalCallChgOI);
       document.getElementById('mPutChg').textContent = 'Chg: ' + fmtChg(d.totalPutChgOI);
-      
+
       document.getElementById('mMaxCall').textContent = fmt(d.maxCallOIStrike);
       document.getElementById('mResStrength').textContent = d.resistanceStrength !== undefined ? d.resistanceStrength : '—';
-      
+
       document.getElementById('mMaxPut').textContent = fmt(d.maxPutOIStrike);
       document.getElementById('mSupStrength').textContent = d.supportStrength !== undefined ? d.supportStrength : '—';
 
