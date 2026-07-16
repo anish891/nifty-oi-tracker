@@ -24,7 +24,7 @@ const NSE_HEADERS = {
 // Simple in-memory cache to avoid hammering NSE (2.5s TTL)
 let cache = { data: null, ts: 0, expiry: null };
 
-const CACHE_TTL = 2500;
+const CACHE_TTL = 1000;
 const COOKIE_TTL = 10 * 60 * 1000;
 
 let cookieCache = {

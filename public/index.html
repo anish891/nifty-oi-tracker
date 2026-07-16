@@ -134,63 +134,103 @@
       color: var(--muted);
     }
 
-    /* ── Metrics row ── */
-    .metrics {
+    /* ── Metrics Dashboard ── */
+    .metrics-dashboard {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      gap: 1px;
-      background: var(--border);
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      padding: 16px 20px;
+      background: var(--bg);
       border-bottom: 1px solid var(--border);
     }
 
-    @media (max-width: 768px) {
-      .metrics {
-        display: flex;
-        overflow-x: auto;
-        gap: 1px;
-        scroll-snap-type: x mandatory;
-        -webkit-overflow-scrolling: touch;
-      }
-
-      .metric {
-        flex: 0 0 135px;
-        scroll-snap-align: start;
-      }
-
-      .metrics::-webkit-scrollbar {
-        height: 3px;
-      }
-
-      .metrics::-webkit-scrollbar-thumb {
-        background: var(--border2);
-        border-radius: 2px;
-      }
-    }
-
-    .metric {
+    .dashboard-card {
       background: var(--surface);
-      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    .metric .label {
+    .dashboard-card .card-header {
       font-size: 10px;
+      font-weight: 600;
       color: var(--muted);
       text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 4px;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
     }
 
-    .metric .val {
+    .dashboard-card .card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+      justify-content: space-between;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .metric-row.compact-row {
+      margin-top: 4px;
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+    }
+
+    .metric-row.highlight-row {
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-top: 2px;
+    }
+
+    .metric-item {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    .metric-item .label {
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+
+    .metric-item .val {
       font-size: 18px;
       font-weight: 600;
       font-family: var(--mono);
       letter-spacing: -0.02em;
     }
 
-    .metric .sub {
+    .metric-item .val-small {
+      font-size: 13px;
+      font-weight: 600;
+      font-family: var(--mono);
+    }
+
+    .metric-item .sub {
       font-size: 10px;
       color: var(--muted);
       margin-top: 2px;
+    }
+
+    .metric-sub-stats {
+      font-size: 9px;
+      opacity: 0.85;
+      color: var(--muted);
+      border-top: 1px dashed var(--border);
+      padding-top: 6px;
+      margin-top: 2px;
+      white-space: nowrap;
+      text-align: center;
     }
 
     .bull {
@@ -644,62 +684,103 @@
     </div>
   </div>
 
-  <!-- Metrics -->
-  <div class="metrics" id="metricsRow">
-    <div class="metric">
-      <div class="label">Spot</div>
-      <div class="val acc" id="mSpot">—</div>
-    </div>
-    <div class="metric">
-      <div class="label">ATM Strike</div>
-      <div class="val" id="mATM">—</div>
-    </div>
-    <div class="metric">
-      <div class="label">PCR (OI)</div>
-      <div class="val" id="mPCR">—</div>
-      <div class="sub" id="mPCRsub">—</div>
-      <div class="sub" style="font-size: 9px; margin-top: 4px; opacity: 0.85; white-space: nowrap;">
-        Near ATM: <span id="mNtmPcr">—</span> | Wtd: <span id="mWeightedPcr">—</span>
+  <!-- Metrics Dashboard -->
+  <div class="metrics-dashboard" id="metricsRow">
+    <!-- CARD 1: PRICE & RANGE -->
+    <div class="dashboard-card">
+      <div class="card-header">Price & Range</div>
+      <div class="card-body">
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="label">Spot</span>
+            <span class="val acc" id="mSpot">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">ATM Strike</span>
+            <span class="val" id="mATM">—</span>
+          </div>
+        </div>
+        <div class="metric-row highlight-row">
+          <div class="metric-item">
+            <span class="label">Expected Range</span>
+            <span class="val acc" id="mExpectedRange" style="font-size:13px; font-weight:600;">—</span>
+            <span class="sub">Straddle: <span id="mStraddlePrice">—</span></span>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="metric">
-      <div class="label">Expected Range</div>
-      <div class="val acc" id="mExpectedRange" style="font-size:13px; font-weight:600; line-height:22px;">—</div>
-      <div class="sub">Straddle: <span id="mStraddlePrice">—</span></div>
+
+    <!-- CARD 2: SENTIMENT & BIAS -->
+    <div class="dashboard-card">
+      <div class="card-header">Sentiment & Bias</div>
+      <div class="card-body">
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="label">PCR (OI)</span>
+            <span class="val" id="mPCR">—</span>
+            <span class="sub" id="mPCRsub">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">IV Skew (ATM)</span>
+            <span class="val" id="mIvSkew">—</span>
+            <span class="sub" id="mIvSkewSub">—</span>
+          </div>
+        </div>
+        <div class="metric-sub-stats">
+          Near ATM: <span id="mNtmPcr">—</span> | Wtd: <span id="mWeightedPcr">—</span> | Vol: <span id="mVolPcr">—</span>
+        </div>
+      </div>
     </div>
-    <div class="metric">
-      <div class="label">Total Call OI</div>
-      <div class="val bear" id="mCallOI">—</div>
-      <div class="sub" id="mCallChg">—</div>
+
+    <!-- CARD 3: OPEN INTEREST & VOLUME -->
+    <div class="dashboard-card">
+      <div class="card-header">Open Interest & Volume</div>
+      <div class="card-body">
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="label">Total Calls</span>
+            <span class="val bear" id="mCallOI">—</span>
+            <span class="sub" id="mCallChg">—</span>
+            <span class="sub">Vol: <span id="mCallVol">—</span></span>
+          </div>
+          <div class="metric-item">
+            <span class="label">Total Puts</span>
+            <span class="val bull" id="mPutOI">—</span>
+            <span class="sub" id="mPutChg">—</span>
+            <span class="sub">Vol: <span id="mPutVol">—</span></span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="metric">
-      <div class="label">Total Put OI</div>
-      <div class="val bull" id="mPutOI">—</div>
-      <div class="sub" id="mPutChg">—</div>
-    </div>
-    <div class="metric">
-      <div class="label">Max Call OI at</div>
-      <div class="val bear" id="mMaxCall">—</div>
-      <div class="sub">Res (Strength: <span id="mResStrength">—</span>%)</div>
-    </div>
-    <div class="metric">
-      <div class="label">Max Put OI at</div>
-      <div class="val bull" id="mMaxPut">—</div>
-      <div class="sub">Sup (Strength: <span id="mSupStrength">—</span>%)</div>
-    </div>
-    <div class="metric">
-      <div class="label">IV Skew (ATM)</div>
-      <div class="val" id="mIvSkew">—</div>
-      <div class="sub" id="mIvSkewSub">—</div>
-    </div>
-    <div class="metric">
-      <div class="label">Max Pain</div>
-      <div class="val warn" id="mMaxPain">—</div>
-      <div class="sub">expiry target</div>
-    </div>
-    <div class="metric">
-      <div class="label">Last updated</div>
-      <div class="val" id="mTime" style="font-size:13px;">—</div>
+
+    <!-- CARD 4: KEY LEVELS -->
+    <div class="dashboard-card">
+      <div class="card-header">Key Levels</div>
+      <div class="card-body">
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="label">Max Pain</span>
+            <span class="val warn" id="mMaxPain">—</span>
+            <span class="sub">Expiry target</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">Last Updated</span>
+            <span class="val" id="mTime" style="font-size:12px;">—</span>
+          </div>
+        </div>
+        <div class="metric-row compact-row">
+          <div class="metric-item">
+            <span class="label">Max Call (Res)</span>
+            <span class="val-small bear" id="mMaxCall">—</span>
+            <span class="sub" style="font-size: 8px;">Strength: <span id="mResStrength">—</span>%</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">Max Put (Sup)</span>
+            <span class="val-small bull" id="mMaxPut">—</span>
+            <span class="sub" style="font-size: 8px;">Strength: <span id="mSupStrength">—</span>%</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
