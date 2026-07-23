@@ -288,6 +288,105 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     }
   });
 
+  // Calculate Black-Scholes Gamma and GEX (Gamma Exposure)
+  function normalPdf(x) {
+    return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+  }
+
+  function getDTEInYears(expiryStr) {
+    if (!expiryStr) return 1 / 365;
+    const exp = new Date(expiryStr);
+    const now = new Date();
+    const diffTime = exp.getTime() - now.getTime();
+    const diffDays = diffTime / (1000 * 3600 * 24);
+    return Math.max(0.002, diffDays / 365); // min ~0.7 hours
+  }
+
+  function calculateOptionGamma(S, K, T, v, r = 0.07) {
+    if (S <= 0 || K <= 0 || T <= 0 || v <= 0) return 0;
+    const d1 = (Math.log(S / K) + (r + 0.5 * v * v) * T) / (v * Math.sqrt(T));
+    const gamma = normalPdf(d1) / (S * v * Math.sqrt(T));
+    return isNaN(gamma) ? 0 : gamma;
+  }
+
+  const LOT_SIZE = 25; // Standard Nifty Lot Size
+  const T = getDTEInYears(targetExpiry);
+
+  function computeGexForSpot(S) {
+    let totalGex = 0;
+    allExpiryStrikes.forEach(s => {
+      const cOI = s.CE?.openInterest || 0;
+      const pOI = s.PE?.openInterest || 0;
+
+      const cIv = (s.CE?.impliedVolatility || 0) / 100;
+      const pIv = (s.PE?.impliedVolatility || 0) / 100;
+
+      const cGamma = calculateOptionGamma(S, s.strike, T, cIv);
+      const pGamma = calculateOptionGamma(S, s.strike, T, pIv);
+
+      // Call GEX positive (long gamma for market makers when call bought), Put GEX negative
+      const callGex = cOI * LOT_SIZE * cGamma * S * S * 0.01;
+      const putGex = - (pOI * LOT_SIZE * pGamma * S * S * 0.01);
+
+      totalGex += (callGex + putGex);
+    });
+    return totalGex;
+  }
+
+  const currentGex = computeGexForSpot(spot);
+  const totalGexCr = currentGex / 1e7; // Convert to ₹ Crores
+
+  let callGexTotal = 0;
+  let putGexTotal = 0;
+
+  allExpiryStrikes.forEach(s => {
+    const cOI = s.CE?.openInterest || 0;
+    const pOI = s.PE?.openInterest || 0;
+    const cIv = (s.CE?.impliedVolatility || 0) / 100;
+    const pIv = (s.PE?.impliedVolatility || 0) / 100;
+
+    const cGamma = calculateOptionGamma(spot, s.strike, T, cIv);
+    const pGamma = calculateOptionGamma(spot, s.strike, T, pIv);
+
+    callGexTotal += (cOI * LOT_SIZE * cGamma * spot * spot * 0.01);
+    putGexTotal += (pOI * LOT_SIZE * pGamma * spot * spot * 0.01);
+  });
+
+  const callGexCr = callGexTotal / 1e7;
+  const putGexCr = putGexTotal / 1e7;
+
+  // Search for Zero-Gamma Level (Price where GEX flips)
+  let zeroGammaLevel = atm;
+  let minGexAbs = Infinity;
+  const startSpot = Math.max(1000, atm - 1500);
+  const endSpot = atm + 1500;
+
+  for (let sPrice = startSpot; sPrice <= endSpot; sPrice += 10) {
+    const gVal = Math.abs(computeGexForSpot(sPrice));
+    if (gVal < minGexAbs) {
+      minGexAbs = gVal;
+      zeroGammaLevel = sPrice;
+    }
+  }
+
+  // Calculate CPR & Floor Pivots
+  const estHigh = Math.max(maxCallOIStrike, Math.round(upperRange));
+  const estLow = Math.min(maxPutOIStrike, Math.round(lowerRange));
+  const estClose = spot;
+
+  const pivot = (estHigh + estLow + estClose) / 3;
+  const bc = (estHigh + estLow) / 2;
+  const tc = (pivot - bc) + pivot;
+  const cprWidth = Math.abs(tc - bc);
+  const cprWidthPct = (cprWidth / spot) * 100;
+
+  const r1 = (2 * pivot) - estLow;
+  const s1 = (2 * pivot) - estHigh;
+  const r2 = pivot + (estHigh - estLow);
+  const s2 = pivot - (estHigh - estLow);
+  const r3 = estHigh + 2 * (pivot - estLow);
+  const s3 = estLow - 2 * (estHigh - pivot);
+
   const result = {
     spot,
     atm,
@@ -303,6 +402,28 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     supportStrength: Number(supportStrength.toFixed(1)),
     ivSkew: Number(ivSkew.toFixed(2)),
     maxPain,
+    gex: {
+      totalGexCr: Number(totalGexCr.toFixed(2)),
+      callGexCr: Number(callGexCr.toFixed(2)),
+      putGexCr: Number(putGexCr.toFixed(2)),
+      zeroGammaLevel,
+      gexRegime: totalGexCr >= 0 ? 'POSITIVE_GAMMA' : 'NEGATIVE_GAMMA',
+      distToZeroGamma: Number((spot - zeroGammaLevel).toFixed(1))
+    },
+    cpr: {
+      pivot: Number(pivot.toFixed(1)),
+      tc: Number(tc.toFixed(1)),
+      bc: Number(bc.toFixed(1)),
+      cprWidth: Number(cprWidth.toFixed(1)),
+      cprWidthPct: Number(cprWidthPct.toFixed(2)),
+      cprType: cprWidthPct < 0.25 ? 'NARROW' : cprWidthPct > 0.6 ? 'WIDE' : 'AVERAGE',
+      r1: Number(r1.toFixed(1)),
+      r2: Number(r2.toFixed(1)),
+      r3: Number(r3.toFixed(1)),
+      s1: Number(s1.toFixed(1)),
+      s2: Number(s2.toFixed(1)),
+      s3: Number(s3.toFixed(1))
+    },
     totalCallOI,
     totalPutOI,
     totalCallChgOI,

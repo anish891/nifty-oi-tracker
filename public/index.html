@@ -782,6 +782,50 @@
         </div>
       </div>
     </div>
+
+    <!-- CARD 5: CPR & PIVOTS -->
+    <div class="dashboard-card">
+      <div class="card-header">Central Pivot Range (CPR)</div>
+      <div class="card-body">
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="label">Pivot (P)</span>
+            <span class="val acc" id="mCprPivot">—</span>
+            <span class="sub">TC: <span id="mCprTc">—</span> | BC: <span id="mCprBc">—</span></span>
+          </div>
+          <div class="metric-item">
+            <span class="label">CPR Type</span>
+            <span class="val" id="mCprType" style="font-size:13px; font-weight:600;">—</span>
+            <span class="sub">Width: <span id="mCprWidth">—</span> pts</span>
+          </div>
+        </div>
+        <div class="metric-sub-stats" style="margin-top:4px;">
+          R1: <span id="mCprR1" class="bear">—</span> | S1: <span id="mCprS1" class="bull">—</span> | R2: <span id="mCprR2" class="bear">—</span> | S2: <span id="mCprS2" class="bull">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARD 6: GAMMA EXPOSURE (GEX) -->
+    <div class="dashboard-card">
+      <div class="card-header">Gamma Exposure (GEX)</div>
+      <div class="card-body">
+        <div class="metric-row">
+          <div class="metric-item">
+            <span class="label">Net Market GEX</span>
+            <span class="val" id="mNetGex">—</span>
+            <span class="sub" id="mGexRegime">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">Zero-Gamma Level</span>
+            <span class="val warn" id="mZeroGamma">—</span>
+            <span class="sub" id="mGexDist">—</span>
+          </div>
+        </div>
+        <div class="metric-sub-stats" style="margin-top:4px;">
+          Call GEX: <span id="mCallGex" class="bear">—</span> Cr | Put GEX: <span id="mPutGex" class="bull">—</span> Cr
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- PCR bar -->
@@ -1009,6 +1053,39 @@
 
       document.getElementById('mMaxPain').textContent = fmt(d.maxPain);
       document.getElementById('mTime').textContent = timeStr(d.fetchedAt);
+
+      // Populate CPR Data
+      if (d.cpr) {
+        document.getElementById('mCprPivot').textContent = fmt(d.cpr.pivot);
+        document.getElementById('mCprTc').textContent = fmt(d.cpr.tc);
+        document.getElementById('mCprBc').textContent = fmt(d.cpr.bc);
+        document.getElementById('mCprWidth').textContent = d.cpr.cprWidth;
+        const cprTypeEl = document.getElementById('mCprType');
+        cprTypeEl.textContent = d.cpr.cprType;
+        cprTypeEl.className = 'val ' + (d.cpr.cprType === 'NARROW' ? 'bull' : d.cpr.cprType === 'WIDE' ? 'bear' : 'warn');
+
+        document.getElementById('mCprR1').textContent = fmt(d.cpr.r1);
+        document.getElementById('mCprS1').textContent = fmt(d.cpr.s1);
+        document.getElementById('mCprR2').textContent = fmt(d.cpr.r2);
+        document.getElementById('mCprS2').textContent = fmt(d.cpr.s2);
+      }
+
+      // Populate GEX Data
+      if (d.gex) {
+        const netGexEl = document.getElementById('mNetGex');
+        netGexEl.textContent = (d.gex.totalGexCr >= 0 ? '+' : '') + d.gex.totalGexCr + ' Cr';
+        netGexEl.className = 'val ' + (d.gex.totalGexCr >= 0 ? 'bull' : 'bear');
+
+        const gexRegimeEl = document.getElementById('mGexRegime');
+        gexRegimeEl.textContent = d.gex.gexRegime === 'POSITIVE_GAMMA' ? 'Low Vol (Mean Revert)' : 'High Vol (Trend)';
+        gexRegimeEl.className = 'sub ' + (d.gex.gexRegime === 'POSITIVE_GAMMA' ? 'bull' : 'bear');
+
+        document.getElementById('mZeroGamma').textContent = fmt(d.gex.zeroGammaLevel);
+        document.getElementById('mGexDist').textContent = (d.gex.distToZeroGamma >= 0 ? '+' : '') + d.gex.distToZeroGamma + ' pts to flip';
+
+        document.getElementById('mCallGex').textContent = d.gex.callGexCr;
+        document.getElementById('mPutGex').textContent = d.gex.putGexCr;
+      }
 
       // PCR bar
       const pcr = d.pcr;
