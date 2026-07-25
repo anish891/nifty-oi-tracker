@@ -21,7 +21,7 @@ const NSE_HEADERS = {
 };
 
 
-// Simple in-memory cache to avoid hammering NSE (2.5s TTL)
+// Simple in-memory cache to avoid hammering NSE (1s TTL)
 let cache = { data: null, ts: 0, expiry: null };
 
 const CACHE_TTL = 1000;
@@ -143,18 +143,13 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const atm = Math.round(spot / 50) * 50;
   const MIN_STRIKE = atm - 500;
   const MAX_STRIKE = atm + 500;
-  const allExpiryRows = (raw.records.data || []).filter(r => {
-    const rowExpiry = r.expiryDate || r.expiryDates;
-    return rowExpiry === targetExpiry;
-  });
+  const allExpiryRows = (raw.records.data || []).filter(r => r.expiryDate === targetExpiry);
 
   const allExpiryStrikesMap = {};
   allExpiryRows.forEach(r => {
     const strike = r.strikePrice;
     if (!allExpiryStrikesMap[strike]) {
-      allExpiryStrikesMap[strike] = {
-        strike
-      };
+      allExpiryStrikesMap[strike] = { strike };
     }
     if (r.CE) allExpiryStrikesMap[strike].CE = r.CE;
     if (r.PE) allExpiryStrikesMap[strike].PE = r.PE;
@@ -176,11 +171,6 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   let maxPutOI = 0;
   let maxCallOIStrike = atm;
   let maxPutOIStrike = atm;
-
-  let maxCallChgOI = -Infinity;
-  let maxPutChgOI = -Infinity;
-  let maxCallChgStrike = atm;
-  let maxPutChgStrike = atm;
 
   // Calculate stats on the FULL option chain
   allExpiryStrikes.forEach(s => {
@@ -204,16 +194,6 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     if (pOI > maxPutOI) {
       maxPutOI = pOI;
       maxPutOIStrike = s.strike;
-    }
-
-    if (cChg > maxCallChgOI) {
-      maxCallChgOI = cChg;
-      maxCallChgStrike = s.strike;
-    }
-
-    if (pChg > maxPutChgOI) {
-      maxPutChgOI = pChg;
-      maxPutChgStrike = s.strike;
     }
   });
 
@@ -314,6 +294,8 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
 
   function computeGexForSpot(S) {
     let totalGex = 0;
+    let callGexTotal = 0;
+    let putGexTotal = 0;
     allExpiryStrikes.forEach(s => {
       const cOI = s.CE?.openInterest || 0;
       const pOI = s.PE?.openInterest || 0;
@@ -324,34 +306,18 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
       const cGamma = calculateOptionGamma(S, s.strike, T, cIv);
       const pGamma = calculateOptionGamma(S, s.strike, T, pIv);
 
-      // Call GEX positive (long gamma for market makers when call bought), Put GEX negative
       const callGex = cOI * LOT_SIZE * cGamma * S * S * 0.01;
-      const putGex = - (pOI * LOT_SIZE * pGamma * S * S * 0.01);
+      const putGex = pOI * LOT_SIZE * pGamma * S * S * 0.01;
 
-      totalGex += (callGex + putGex);
+      callGexTotal += callGex;
+      putGexTotal += putGex;
+      totalGex += (callGex - putGex);
     });
-    return totalGex;
+    return { totalGex, callGexTotal, putGexTotal };
   }
 
-  const currentGex = computeGexForSpot(spot);
+  const { totalGex: currentGex, callGexTotal, putGexTotal } = computeGexForSpot(spot);
   const totalGexCr = currentGex / 1e7; // Convert to ₹ Crores
-
-  let callGexTotal = 0;
-  let putGexTotal = 0;
-
-  allExpiryStrikes.forEach(s => {
-    const cOI = s.CE?.openInterest || 0;
-    const pOI = s.PE?.openInterest || 0;
-    const cIv = (s.CE?.impliedVolatility || 0) / 100;
-    const pIv = (s.PE?.impliedVolatility || 0) / 100;
-
-    const cGamma = calculateOptionGamma(spot, s.strike, T, cIv);
-    const pGamma = calculateOptionGamma(spot, s.strike, T, pIv);
-
-    callGexTotal += (cOI * LOT_SIZE * cGamma * spot * spot * 0.01);
-    putGexTotal += (pOI * LOT_SIZE * pGamma * spot * spot * 0.01);
-  });
-
   const callGexCr = callGexTotal / 1e7;
   const putGexCr = putGexTotal / 1e7;
 
@@ -362,7 +328,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const endSpot = atm + 1500;
 
   for (let sPrice = startSpot; sPrice <= endSpot; sPrice += 10) {
-    const gVal = Math.abs(computeGexForSpot(sPrice));
+    const gVal = Math.abs(computeGexForSpot(sPrice).totalGex);
     if (gVal < minGexAbs) {
       minGexAbs = gVal;
       zeroGammaLevel = sPrice;
@@ -384,8 +350,6 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const s1 = (2 * pivot) - estHigh;
   const r2 = pivot + (estHigh - estLow);
   const s2 = pivot - (estHigh - estLow);
-  const r3 = estHigh + 2 * (pivot - estLow);
-  const s3 = estLow - 2 * (estHigh - pivot);
 
   const result = {
     spot,
@@ -419,10 +383,8 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
       cprType: cprWidthPct < 0.25 ? 'NARROW' : cprWidthPct > 0.6 ? 'WIDE' : 'AVERAGE',
       r1: Number(r1.toFixed(1)),
       r2: Number(r2.toFixed(1)),
-      r3: Number(r3.toFixed(1)),
       s1: Number(s1.toFixed(1)),
-      s2: Number(s2.toFixed(1)),
-      s3: Number(s3.toFixed(1))
+      s2: Number(s2.toFixed(1))
     },
     totalCallOI,
     totalPutOI,
@@ -430,8 +392,6 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     totalPutChgOI,
     maxCallOIStrike,
     maxPutOIStrike,
-    maxCallChgStrike,
-    maxPutChgStrike,
     strikes,
     fetchedAt: new Date().toISOString()
   };
