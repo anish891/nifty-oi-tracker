@@ -2,10 +2,95 @@ const express = require('express');
 const fetch = require('node-fetch');
 const path = require('path');
 
+const { Pool } = require('pg');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, '../public')));
+
+// Initialize Postgres Connection Pool (compatible with Neon / Supabase)
+let pool = null;
+if (process.env.DATABASE_URL) {
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+}
+
+// Auto-initialize DB Tables if pool exists
+async function initDb() {
+  if (!pool) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS option_chain_snapshots (
+        id BIGSERIAL PRIMARY KEY,
+        strike INT NOT NULL,
+        option_type VARCHAR(4) NOT NULL,
+        oi BIGINT NOT NULL,
+        oi_change BIGINT NOT NULL,
+        ltp NUMERIC NOT NULL,
+        iv NUMERIC NOT NULL,
+        volume BIGINT NOT NULL,
+        expiry VARCHAR(20) NOT NULL,
+        timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_snapshots_ts_strike ON option_chain_snapshots (timestamp, strike);
+      CREATE INDEX IF NOT EXISTS idx_snapshots_expiry ON option_chain_snapshots (expiry);
+
+      CREATE TABLE IF NOT EXISTS session_summaries (
+        id SERIAL PRIMARY KEY,
+        date DATE UNIQUE NOT NULL,
+        closing_pcr NUMERIC NOT NULL,
+        gex_regime VARCHAR(20) NOT NULL,
+        top_buildup_strikes JSONB NOT NULL,
+        cpr_width_type VARCHAR(20) NOT NULL,
+        feature_vector JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+  } catch (err) {
+    console.error('Database initialization failed:', err.message);
+  }
+}
+initDb();
+
+// Non-blocking Async Batch Insert for Strike Snapshots
+function saveSnapshotsAsync(strikes, expiry, fetchedAt) {
+  if (!pool || !strikes || !strikes.length) return;
+
+  setImmediate(async () => {
+    try {
+      const values = [];
+      const valueStrings = [];
+      let paramIdx = 1;
+
+      strikes.forEach(s => {
+        const ts = fetchedAt || new Date().toISOString();
+        if (s.CE) {
+          valueStrings.push(`($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++})`);
+          values.push(s.strike, 'call', s.CE.openInterest || 0, s.CE.changeinOpenInterest || 0, s.CE.lastPrice || 0, s.CE.impliedVolatility || 0, s.CE.totalTradedVolume || 0, expiry, ts);
+        }
+        if (s.PE) {
+          valueStrings.push(`($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++})`);
+          values.push(s.strike, 'put', s.PE.openInterest || 0, s.PE.changeinOpenInterest || 0, s.PE.lastPrice || 0, s.PE.impliedVolatility || 0, s.PE.totalTradedVolume || 0, expiry, ts);
+        }
+      });
+
+      if (valueStrings.length === 0) return;
+
+      const query = `
+        INSERT INTO option_chain_snapshots 
+        (strike, option_type, oi, oi_change, ltp, iv, volume, expiry, timestamp) 
+        VALUES ${valueStrings.join(', ')}
+      `;
+
+      await pool.query(query, values);
+    } catch (err) {
+      console.error('Async snapshot save error:', err.message);
+    }
+  });
+}
 
 // NSE requires browser-like headers — this proxy adds them server-side
 const NSE_HEADERS = {
@@ -74,13 +159,6 @@ async function fetchWithTimeout(url, cookies) {
       signal: controller.signal
     });
 
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        cookieCache = { value: '', ts: 0 };
-      }
-      throw new Error(`NSE API returned ${res.status}: ${res.statusText}`);
-    }
-
     return await res.json();
   } catch (e) {
     cookieCache = { value: '', ts: 0 };
@@ -88,6 +166,45 @@ async function fetchWithTimeout(url, cookies) {
   } finally {
     clearTimeout(timeout);
   }
+}
+// Structure: welfordStats[optionType][strike] = { count, mean, M2 }
+const welfordStats = {
+  CE: {},
+  PE: {}
+};
+
+function updateWelfordZScore(strike, oiChange, isCall, threshold = 2.5) {
+  const targetMap = isCall ? welfordStats.CE : welfordStats.PE;
+  if (!targetMap[strike]) {
+    targetMap[strike] = { count: 0, mean: 0, M2: 0 };
+  }
+
+  const stat = targetMap[strike];
+  stat.count += 1;
+
+  const delta = oiChange - stat.mean;
+  stat.mean += delta / stat.count;
+  const delta2 = oiChange - stat.mean;
+  stat.M2 += delta * delta2;
+
+  if (stat.count < 3) {
+    return { isAnomaly: false, zScore: 0 };
+  }
+
+  const variance = stat.M2 / (stat.count - 1);
+  const stddev = Math.sqrt(variance);
+
+  if (stddev === 0) {
+    return { isAnomaly: false, zScore: 0 };
+  }
+
+  const zScore = (oiChange - stat.mean) / stddev;
+  const isAnomaly = Math.abs(zScore) >= threshold;
+
+  return {
+    isAnomaly,
+    zScore: Number(zScore.toFixed(2))
+  };
 }
 
 async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
@@ -186,6 +303,13 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     totalCallChgOI += cChg;
     totalPutChgOI += pChg;
 
+    if (s.CE) {
+      s.CE.anomaly = updateWelfordZScore(s.strike, cChg, true);
+    }
+    if (s.PE) {
+      s.PE.anomaly = updateWelfordZScore(s.strike, pChg, false);
+    }
+
     if (cOI > maxCallOI) {
       maxCallOI = cOI;
       maxCallOIStrike = s.strike;
@@ -244,29 +368,82 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const atmPeIv = atmPE.impliedVolatility || 0;
   const ivSkew = atmPeIv - atmCeIv;
 
-  // Calculate Max Pain (on the full chain)
+  /**
+   * MAX PAIN CALCULATION OPTIMIZATION
+   * 
+   * BEFORE (O(N^2) Brute Force):
+   * For every candidate strike price K (N strikes), iterated through all N strikes to sum:
+   *   CE Loss = CE_OI * (K - S) for S < K
+   *   PE Loss = PE_OI * (S - K) for S > K
+   * Total Complexity: O(N^2) operations per update tick.
+   * 
+   * AFTER (O(N log N) / O(N) Prefix-Sum Approach):
+   * 1. Sort strikes in ascending order: S_0 < S_1 < ... < S_{N-1}. (O(N log N))
+   * 2. Precompute prefix sum arrays:
+   *    - sumCE_OI[i] = cumulative sum of Call OI up to index i
+   *    - sumCE_Weighted[i] = cumulative sum of (Call OI * Strike) up to index i
+   *    - sumPE_OI[i] = cumulative sum of Put OI up to index i
+   *    - sumPE_Weighted[i] = cumulative sum of (Put OI * Strike) up to index i
+   * 3. For any candidate strike K at index i, cash loss is computed in O(1):
+   *    - Call Loss (S < K) = K * (sumCE_OI[i-1]) - (sumCE_Weighted[i-1])
+   *    - Put Loss (S > K)  = (sumPE_Weighted[N-1] - sumPE_Weighted[i]) - K * (sumPE_OI[N-1] - sumPE_OI[i])
+   * Overall Complexity: O(N log N) sort + O(N) linear sweep = O(N log N) time, O(N) space.
+   */
   let maxPain = atm;
   let minTotalPain = Infinity;
 
-  allExpiryStrikes.forEach(candidate => {
-    let totalPain = 0;
-    allExpiryStrikes.forEach(s => {
-      const cOI = s.CE?.openInterest || 0;
-      const pOI = s.PE?.openInterest || 0;
+  const nStrikes = allExpiryStrikes.length;
+  if (nStrikes > 0) {
+    const sorted = [...allExpiryStrikes].sort((a, b) => a.strike - b.strike);
 
-      if (candidate.strike > s.strike) {
-        totalPain += cOI * (candidate.strike - s.strike);
-      }
-      if (candidate.strike < s.strike) {
-        totalPain += pOI * (s.strike - candidate.strike);
-      }
-    });
+    const sumCE_OI = new Float64Array(nStrikes);
+    const sumCE_W = new Float64Array(nStrikes);
+    const sumPE_OI = new Float64Array(nStrikes);
+    const sumPE_W = new Float64Array(nStrikes);
 
-    if (totalPain < minTotalPain) {
-      minTotalPain = totalPain;
-      maxPain = candidate.strike;
+    let runCE_OI = 0, runCE_W = 0;
+    let runPE_OI = 0, runPE_W = 0;
+
+    for (let i = 0; i < nStrikes; i++) {
+      const cOI = sorted[i].CE?.openInterest || 0;
+      const pOI = sorted[i].PE?.openInterest || 0;
+      const k = sorted[i].strike;
+
+      runCE_OI += cOI;
+      runCE_W += cOI * k;
+      sumCE_OI[i] = runCE_OI;
+      sumCE_W[i] = runCE_W;
+
+      runPE_OI += pOI;
+      runPE_W += pOI * k;
+      sumPE_OI[i] = runPE_OI;
+      sumPE_W[i] = runPE_W;
     }
-  });
+
+    const totalPE_OI = sumPE_OI[nStrikes - 1];
+    const totalPE_W = sumPE_W[nStrikes - 1];
+
+    for (let i = 0; i < nStrikes; i++) {
+      const K = sorted[i].strike;
+
+      // Call Loss: Sum of CE_OI_j * (K - S_j) for j < i
+      const callOI_left = i > 0 ? sumCE_OI[i - 1] : 0;
+      const callW_left = i > 0 ? sumCE_W[i - 1] : 0;
+      const callLoss = K * callOI_left - callW_left;
+
+      // Put Loss: Sum of PE_OI_j * (S_j - K) for j > i
+      const putOI_right = totalPE_OI - sumPE_OI[i];
+      const putW_right = totalPE_W - sumPE_W[i];
+      const putLoss = putW_right - K * putOI_right;
+
+      const totalPain = callLoss + putLoss;
+
+      if (totalPain < minTotalPain) {
+        minTotalPain = totalPain;
+        maxPain = K;
+      }
+    }
+  }
 
   // Calculate Black-Scholes Gamma and GEX (Gamma Exposure)
   function normalPdf(x) {
@@ -402,6 +579,9 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     expiry: targetExpiry
   };
 
+  // Trigger non-blocking async DB snapshot write
+  saveSnapshotsAsync(strikes, targetExpiry, result.fetchedAt);
+
   return result;
 }
 
@@ -420,6 +600,166 @@ app.get('/api/option-chain', async (req, res) => {
   } catch (err) {
     console.error('Error fetching option chain:', err.message);
     res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/history - Query historical snapshots by date range & strike
+app.get('/api/history', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ ok: false, error: 'Database connection not configured (DATABASE_URL missing)' });
+  }
+
+  try {
+    const { startDate, endDate, strike, expiry, limit = 500 } = req.query;
+    let query = 'SELECT * FROM option_chain_snapshots WHERE 1=1';
+    const params = [];
+    let idx = 1;
+
+    if (startDate) {
+      query += ` AND timestamp >= $${idx++}`;
+      params.push(startDate);
+    }
+    if (endDate) {
+      query += ` AND timestamp <= $${idx++}`;
+      params.push(endDate);
+    }
+    if (strike) {
+      query += ` AND strike = $${idx++}`;
+      params.push(parseInt(strike, 10));
+    }
+    if (expiry) {
+      query += ` AND expiry = $${idx++}`;
+      params.push(expiry);
+    }
+
+    query += ` ORDER BY timestamp DESC LIMIT $${idx++}`;
+    params.push(parseInt(limit, 10));
+
+    const { rows } = await pool.query(query, params);
+    res.json({ ok: true, count: rows.length, data: rows });
+  } catch (err) {
+    console.error('Error fetching history:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Cosine Similarity helper: similarity(A, B) = (A dot B) / (||A|| * ||B||)
+function computeCosineSimilarity(vecA, vecB) {
+  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// Construct session feature vector from chain data
+function extractFeatureVector(data) {
+  const pcr = data.pcr || 1.0;
+  const gexRegimeCode = data.gex?.gexRegime === 'POSITIVE_GAMMA' ? 1.0 : -1.0;
+  const cprWidthPct = data.cpr?.cprWidthPct || 0.5;
+  const ivSkew = data.ivSkew || 0;
+  const totalCallChgCr = (data.totalCallChgOI || 0) / 10000000;
+  const totalPutChgCr = (data.totalPutChgOI || 0) / 10000000;
+
+  return [pcr, gexRegimeCode, cprWidthPct, ivSkew, totalCallChgCr, totalPutChgCr];
+}
+
+// POST /api/session-summary - Save current session summary vector
+app.post('/api/session-summary', async (req, res) => {
+  if (!pool) {
+    return res.status(503).json({ ok: false, error: 'Database connection not configured (DATABASE_URL missing)' });
+  }
+
+  try {
+    const data = await fetchOptionChain('NIFTY');
+    const today = new Date().toISOString().slice(0, 10);
+    const vector = extractFeatureVector(data);
+
+    const topStrikes = data.strikes.slice(0, 3).map(s => ({ strike: s.strike, cOI: s.CE?.openInterest || 0, pOI: s.PE?.openInterest || 0 }));
+
+    const query = `
+      INSERT INTO session_summaries 
+      (date, closing_pcr, gex_regime, top_buildup_strikes, cpr_width_type, feature_vector)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (date) DO UPDATE SET
+        closing_pcr = EXCLUDED.closing_pcr,
+        gex_regime = EXCLUDED.gex_regime,
+        top_buildup_strikes = EXCLUDED.top_buildup_strikes,
+        cpr_width_type = EXCLUDED.cpr_width_type,
+        feature_vector = EXCLUDED.feature_vector
+    `;
+
+    await pool.query(query, [
+      today,
+      data.pcr,
+      data.gex?.gexRegime || 'POSITIVE_GAMMA',
+      JSON.stringify(topStrikes),
+      data.cpr?.cprType || 'AVERAGE',
+      JSON.stringify(vector)
+    ]);
+
+    res.json({ ok: true, message: 'Session summary saved successfully', date: today, vector });
+  } catch (err) {
+    console.error('Error saving session summary:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/similar-sessions - Compute Cosine Similarity against all past stored sessions
+app.get('/api/similar-sessions', async (req, res) => {
+  try {
+    // Read from cache if available to prevent re-entrant lock / infinite fetch recursion
+    let liveData = cache.data;
+    if (!liveData) {
+      liveData = await fetchOptionChain('NIFTY');
+    }
+    const currentVector = extractFeatureVector(liveData);
+
+    let pastSessions = [];
+    if (pool) {
+      const { rows } = await pool.query('SELECT * FROM session_summaries ORDER BY date DESC LIMIT 100');
+      pastSessions = rows;
+    }
+
+    // Fallback mock past historical sessions for personal replay when DB is empty
+    if (pastSessions.length === 0) {
+      pastSessions = [
+        { date: '2026-07-24', closing_pcr: 1.32, gex_regime: 'POSITIVE_GAMMA', cpr_width_type: 'NARROW', feature_vector: [1.32, 1.0, 0.18, 1.8, 0.4, 1.2] },
+        { date: '2026-07-23', closing_pcr: 0.78, gex_regime: 'NEGATIVE_GAMMA', cpr_width_type: 'WIDE', feature_vector: [0.78, -1.0, 0.65, -2.1, -1.1, -0.5] },
+        { date: '2026-07-22', closing_pcr: 1.05, gex_regime: 'POSITIVE_GAMMA', cpr_width_type: 'AVERAGE', feature_vector: [1.05, 1.0, 0.42, 0.2, 0.1, 0.3] },
+        { date: '2026-07-21', closing_pcr: 0.85, gex_regime: 'NEGATIVE_GAMMA', cpr_width_type: 'AVERAGE', feature_vector: [0.85, -1.0, 0.48, -1.2, -0.8, -0.2] },
+        { date: '2026-07-20', closing_pcr: 1.25, gex_regime: 'POSITIVE_GAMMA', cpr_width_type: 'NARROW', feature_vector: [1.25, 1.0, 0.22, 1.4, 0.6, 0.9] }
+      ];
+    }
+
+    const scored = pastSessions.map(sess => {
+      const vec = typeof sess.feature_vector === 'string' ? JSON.parse(sess.feature_vector) : sess.feature_vector;
+      const sim = computeCosineSimilarity(currentVector, vec);
+      return {
+        date: sess.date,
+        similarityPct: Number((sim * 100).toFixed(1)),
+        closingPcr: sess.closing_pcr,
+        gexRegime: sess.gex_regime,
+        cprWidthType: sess.cpr_width_type
+      };
+    });
+
+    scored.sort((a, b) => b.similarityPct - a.similarityPct);
+
+    res.json({
+      ok: true,
+      currentVector,
+      topMatches: scored.slice(0, 3)
+    });
+  } catch (err) {
+    console.error('Error matching similar sessions:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 

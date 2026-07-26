@@ -537,6 +537,21 @@
       color: var(--muted);
     }
 
+    /* Anomaly badge */
+    .anomaly-badge {
+      display: inline-block;
+      font-size: 8px;
+      font-family: var(--font);
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--warn);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      border-radius: 3px;
+      padding: 1px 4px;
+      margin-left: 4px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
     /* Buildup badge */
     .bd {
       display: inline-block;
@@ -857,6 +872,16 @@
         </div>
       </div>
     </div>
+
+    <!-- CARD 7: HISTORICAL SESSION MATCHES -->
+    <div class="dashboard-card">
+      <div class="card-header">Sessions That Looked Like Today</div>
+      <div class="card-body">
+        <div id="similarSessionsList" style="display:flex; flex-direction:column; gap:6px; font-size:11px;">
+          <div style="color:var(--muted); text-align:center; padding:10px;">Matching sessions...</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- PCR bar -->
@@ -959,9 +984,49 @@
       return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
-    function buildup(chgOI, chgPrice, isCall) {
-      const oiUp = chgOI > 0;
-      const priceUp = chgPrice > 0;
+    // Sliding window ring buffer for strike tick history (last 8 ticks)
+    const tickHistory = {
+      CE: {}, // strike -> [{ oi, price, ts }]
+      PE: {}  // strike -> [{ oi, price, ts }]
+    };
+
+    function updateTickHistory(strike, oi, price, isCall) {
+      const targetMap = isCall ? tickHistory.CE : tickHistory.PE;
+      if (!targetMap[strike]) targetMap[strike] = [];
+      const history = targetMap[strike];
+
+      // Append tick
+      history.push({ oi, price, ts: Date.now() });
+
+      // Maintain max 8 ticks window
+      if (history.length > 8) history.shift();
+    }
+
+    function getSmoothedBuildup(strike, currentOI, currentPrice, isCall) {
+      updateTickHistory(strike, currentOI, currentPrice, isCall);
+
+      const history = isCall ? tickHistory.CE[strike] : tickHistory.PE[strike];
+      if (!history || history.length < 2) {
+        return buildupSingle(currentOI, 0, isCall);
+      }
+
+      // Compute total trend over the sliding window (first to last tick in window)
+      const oldest = history[0];
+      const newest = history[history.length - 1];
+
+      const netOIChange = newest.oi - oldest.oi;
+      const netPriceChange = newest.price - oldest.price;
+
+      // Fall back to single-tick if window change is negligible
+      const oiTrend = netOIChange !== 0 ? netOIChange : (currentOI - (history[history.length - 2]?.oi || currentOI));
+      const priceTrend = netPriceChange !== 0 ? netPriceChange : (currentPrice - (history[history.length - 2]?.price || currentPrice));
+
+      return buildupSingle(oiTrend, priceTrend, isCall);
+    }
+
+    function buildupSingle(chgOI, chgPrice, isCall) {
+      const oiUp = chgOI >= 0;
+      const priceUp = chgPrice >= 0;
       if (isCall) {
         if (oiUp && priceUp) return { label: 'LONG BUILD', cls: 'bd-lb' };
         if (oiUp && !priceUp) return { label: 'SHORT BUILD', cls: 'bd-sb' };
@@ -1125,7 +1190,33 @@
       else if (pcr < 0.8) { sentEl.textContent = 'Bearish'; sentEl.className = 'pcr-sent bear'; }
       else { sentEl.textContent = 'Neutral'; sentEl.className = 'pcr-sent warn'; }
 
+      fetchSimilarSessions();
       renderTable();
+    }
+
+    async function fetchSimilarSessions() {
+      try {
+        const r = await fetch('/api/similar-sessions');
+        const json = await r.json();
+        if (!json.ok || !json.topMatches) return;
+
+        const container = document.getElementById('similarSessionsList');
+        if (!container) return;
+
+        container.innerHTML = json.topMatches.map(m => `
+          <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:4px 8px; border-radius:4px;">
+            <div>
+              <span style="font-weight:600;">${m.date}</span>
+              <span style="color:var(--muted); font-size:9px; margin-left:4px;">(PCR ${m.closingPcr.toFixed(2)})</span>
+            </div>
+            <div style="font-weight:600;" class="${m.similarityPct > 90 ? 'bull' : m.similarityPct > 75 ? 'acc' : 'warn'}">
+              ${m.similarityPct}% match
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.error('Failed to fetch similar sessions:', err);
+      }
     }
 
     function renderTable() {
@@ -1175,8 +1266,8 @@
         const cChgP = cLTP - (prevCE.lastPrice || cLTP);
         const pChgP = pLTP - (prevPE.lastPrice || pLTP);
 
-        const cBD = buildup(cChg, cChgP, true);
-        const pBD = buildup(pChg, pChgP, false);
+        const cBD = getSmoothedBuildup(r.strike, cOI, cLTP, true);
+        const pBD = getSmoothedBuildup(r.strike, pOI, pLTP, false);
 
         const cBarW = pct(cOI, maxCallOI);
         const pBarW = pct(pOI, maxPutOI);
@@ -1188,11 +1279,15 @@
 
         const flashCls = prevData ? (cChg > (prevCE.changeinOpenInterest || 0) ? 'flash-bull' : '') : '';
 
+        const cAnomalyHtml = ce.anomaly && ce.anomaly.isAnomaly ? `<span class="anomaly-badge" title="Z-Score: ${ce.anomaly.zScore}">🔥 z=${ce.anomaly.zScore}</span>` : '';
+        const pAnomalyHtml = pe.anomaly && pe.anomaly.isAnomaly ? `<span class="anomaly-badge" title="Z-Score: ${pe.anomaly.zScore}">🔥 z=${pe.anomaly.zScore}</span>` : '';
+
         return `
     <tr class="${isATM ? 'atm-row' : ''} ${flashCls}" data-strike="${r.strike}">
       <td class="right">
         <div class="oi-bar-row">
           <span class="chg-val ${cChgCls}">${fmtChg(cChg)}</span>
+          ${cAnomalyHtml}
           <div class="bar-track"><div class="bar-fill call-fill" style="width:${cChgW}%"></div></div>
           <span class="bd ${cBD.cls}">${cBD.label}</span>
         </div>
@@ -1224,6 +1319,7 @@
         <div class="oi-bar-row left">
           <span class="bd ${pBD.cls}">${pBD.label}</span>
           <div class="bar-track"><div class="bar-fill put-fill" style="width:${pChgW}%"></div></div>
+          ${pAnomalyHtml}
           <span class="chg-val ${pChgCls}">${fmtChg(pChg)}</span>
         </div>
       </td>
