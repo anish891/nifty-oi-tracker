@@ -653,6 +653,15 @@
     <div class="status-text" id="statusText">Connecting…</div>
 
     <div class="topbar-right">
+      <button onclick="exportCSV()" title="Export Option Chain to CSV">
+        📥 CSV
+      </button>
+      <button onclick="takeSnapshot()" title="Save Screenshot of Dashboard">
+        📷 Snapshot
+      </button>
+      <button onclick="toggleTheme()" id="themeBtn" title="Toggle Light/Dark Theme">
+        🌙 Dark
+      </button>
       <label class="interval-label">Expiry</label>
       <select id="expirySelect" onchange="onExpiryChange()">
         <option value="">Loading…</option>
@@ -784,7 +793,8 @@
           </div>
         </div>
         <div class="metric-sub-stats" style="margin-top:4px;">
-          R1: <span id="mCprR1" class="bear">—</span> | S1: <span id="mCprS1" class="bull">—</span> | R2: <span id="mCprR2" class="bear">—</span> | S2: <span id="mCprS2" class="bull">—</span>
+          R1: <span id="mCprR1" class="bear">—</span> | S1: <span id="mCprS1" class="bull">—</span> | R2: <span
+            id="mCprR2" class="bear">—</span> | S2: <span id="mCprS2" class="bull">—</span>
         </div>
       </div>
     </div>
@@ -1242,7 +1252,121 @@
       fetchNow();
     }
 
+    // ── Theme Toggle ──
+    function initTheme() {
+      const saved = localStorage.getItem('oi_tracker_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', saved);
+      updateThemeBtn(saved);
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('oi_tracker_theme', next);
+      updateThemeBtn(next);
+    }
+
+    function updateThemeBtn(theme) {
+      const btn = document.getElementById('themeBtn');
+      if (btn) btn.textContent = theme === 'dark' ? '🌙 Dark' : '☀️ Light';
+    }
+
+    // ── CSV Export ──
+    function exportCSV() {
+      if (!currentData || !currentData.strikes) {
+        alert('No data available to export yet!');
+        return;
+      }
+
+      const headers = [
+        'Call_Chg_OI', 'Call_OI', 'Call_IV', 'Call_LTP', 'Call_Bid', 'Call_Ask',
+        'Strike',
+        'Put_Bid', 'Put_Ask', 'Put_LTP', 'Put_IV', 'Put_OI', 'Put_Chg_OI'
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      currentData.strikes.forEach(r => {
+        const ce = r.CE || {};
+        const pe = r.PE || {};
+        const row = [
+          ce.changeinOpenInterest || 0,
+          ce.openInterest || 0,
+          ce.impliedVolatility || 0,
+          ce.lastPrice || 0,
+          ce.bidprice || 0,
+          ce.askPrice || 0,
+          r.strike,
+          pe.bidprice || 0,
+          pe.askPrice || 0,
+          pe.lastPrice || 0,
+          pe.impliedVolatility || 0,
+          pe.openInterest || 0,
+          pe.changeinOpenInterest || 0
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const filename = `Nifty_OI_${currentData.expiry || 'chain'}_${new Date().toISOString().slice(0,10)}.csv`;
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // ── Snapshot Export ──
+    async function takeSnapshot() {
+      const btn = document.querySelector('button[onclick="takeSnapshot()"]');
+      const originalText = btn ? btn.textContent : '📷 Snapshot';
+      if (btn) btn.textContent = '⏳ Capturing...';
+
+      const captureWindow = async () => {
+        const canvas = await html2canvas(document.body, {
+          backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg') || '#0d0f14',
+          scrollX: 0,
+          scrollY: 0,
+          scale: 1.5,
+          useCORS: true
+        });
+        const image = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        const filename = `Nifty_OI_Snapshot_${new Date().toISOString().slice(0,10)}.png`;
+        link.download = filename;
+        link.href = image;
+        link.click();
+      };
+
+      try {
+        if (typeof html2canvas === 'undefined') {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+          script.onload = async () => {
+            await captureWindow();
+            if (btn) btn.textContent = originalText;
+          };
+          script.onerror = () => {
+            alert('Failed to load screenshot library.');
+            if (btn) btn.textContent = originalText;
+          };
+          document.head.appendChild(script);
+        } else {
+          await captureWindow();
+          if (btn) btn.textContent = originalText;
+        }
+      } catch (err) {
+        console.error('Snapshot failed:', err);
+        alert('Failed to capture snapshot.');
+        if (btn) btn.textContent = originalText;
+      }
+    }
+
     // Boot
+    initTheme();
     fetchNow();
     startAutoRefresh();
   </script>

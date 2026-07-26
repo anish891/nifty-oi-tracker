@@ -24,7 +24,7 @@ const NSE_HEADERS = {
 // Simple in-memory cache to avoid hammering NSE (1s TTL)
 let cache = { data: null, ts: 0, expiry: null };
 
-const CACHE_TTL = 1000;
+const CACHE_TTL = 100;
 const COOKIE_TTL = 10 * 60 * 1000;
 
 let cookieCache = {
@@ -138,12 +138,12 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     }
   }
 
-  const spot = raw.records.underlyingValue || 0;
+  const spot = raw.records.underlyingValue || raw.records.data?.[0]?.CE?.underlyingValue || raw.records.data?.[0]?.PE?.underlyingValue || 0;
 
   const atm = Math.round(spot / 50) * 50;
   const MIN_STRIKE = atm - 500;
   const MAX_STRIKE = atm + 500;
-  const allExpiryRows = (raw.records.data || []).filter(r => r.expiryDate === targetExpiry);
+  const allExpiryRows = (raw.records.data || []).filter(r => (r.expiryDate || r.expiryDates) === targetExpiry);
 
   const allExpiryStrikesMap = {};
   allExpiryRows.forEach(r => {
@@ -427,8 +427,10 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, ts: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-  console.log(`Nifty OI Tracker running on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Nifty OI Tracker running on http://localhost:${PORT}`);
+  });
+}
 
 module.exports = app;
