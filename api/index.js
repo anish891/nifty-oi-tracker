@@ -1,6 +1,9 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
+require('dotenv').config();
+
 const express = require('express');
 const fetch = require('node-fetch');
-const path = require('path');
 
 const { Pool } = require('pg');
 
@@ -11,11 +14,25 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Initialize Postgres Connection Pool (compatible with Neon / Supabase)
 let pool = null;
-if (process.env.DATABASE_URL) {
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
+let dbUrl = (process.env.DATABASE_URL || '').trim().replace(/^["']|["']$/g, '');
+
+if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
+  try {
+    // Automatically URL-encode password if it contains unescaped special characters (e.g. # or !)
+    const match = dbUrl.match(/^(postgresql?:\/\/)([^:]+):([^@]+)@(.+)$/);
+    if (match) {
+      const [, protocol, user, pass, rest] = match;
+      dbUrl = `${protocol}${user}:${encodeURIComponent(pass)}@${rest}`;
+    }
+    new URL(dbUrl); // Validate URL structure
+    pool = new Pool({
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false }
+    });
+  } catch (err) {
+    console.error('Invalid DATABASE_URL format in .env.local:', err.message);
+    pool = null;
+  }
 }
 
 // Auto-initialize DB Tables if pool exists
@@ -55,9 +72,18 @@ async function initDb() {
 }
 initDb();
 
-// Non-blocking Async Batch Insert for Strike Snapshots
+// Throttled Async Batch Insert for Strike Snapshots (Max once per 1 minute to preserve Supabase storage)
+let lastDbWriteTs = 0;
+const DB_WRITE_INTERVAL_MS = 60 * 1000; // 1 minute throttle
+
 function saveSnapshotsAsync(strikes, expiry, fetchedAt) {
   if (!pool || !strikes || !strikes.length) return;
+
+  const now = Date.now();
+  if (now - lastDbWriteTs < DB_WRITE_INTERVAL_MS) {
+    return; // Skip DB write if written within the last 1 minute
+  }
+  lastDbWriteTs = now;
 
   setImmediate(async () => {
     try {
@@ -86,6 +112,9 @@ function saveSnapshotsAsync(strikes, expiry, fetchedAt) {
       `;
 
       await pool.query(query, values);
+
+      // Auto-prune snapshots older than 7 days to keep database size well below Supabase 500MB free limit
+      await pool.query("DELETE FROM option_chain_snapshots WHERE timestamp < NOW() - INTERVAL '7 days'");
     } catch (err) {
       console.error('Async snapshot save error:', err.message);
     }
@@ -119,8 +148,13 @@ let cookieCache = {
 
 async function fetchNSECookies() {
   const res = await fetch('https://www.nseindia.com/', { headers: NSE_HEADERS });
-  const cookies = res.headers.raw()['set-cookie'] || [];
-  return cookies.map(c => c.split(';')[0]).join('; ');
+  let cookies = [];
+  if (typeof res.headers.getSetCookie === 'function') {
+    cookies = res.headers.getSetCookie();
+  } else if (typeof res.headers.raw === 'function') {
+    cookies = res.headers.raw()['set-cookie'] || [];
+  }
+  return (cookies || []).map(c => c.split(';')[0]).join('; ');
 }
 
 async function getCookies() {
@@ -640,6 +674,42 @@ app.get('/api/history', async (req, res) => {
   } catch (err) {
     console.error('Error fetching history:', err.message);
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/db-status - Check if Postgres tables exist and view row counts
+app.get('/api/db-status', async (req, res) => {
+  if (!pool) {
+    return res.status(200).json({
+      connected: false,
+      message: 'DATABASE_URL is not set in environment variables.'
+    });
+  }
+
+  try {
+    const tableQuery = `
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+    `;
+    const { rows: tables } = await pool.query(tableQuery);
+
+    const snapshotsCount = await pool.query('SELECT COUNT(*) FROM option_chain_snapshots');
+    const sessionsCount = await pool.query('SELECT COUNT(*) FROM session_summaries');
+
+    res.json({
+      connected: true,
+      tables: tables.map(t => t.table_name),
+      rowCounts: {
+        option_chain_snapshots: parseInt(snapshotsCount.rows[0].count, 10),
+        session_summaries: parseInt(sessionsCount.rows[0].count, 10)
+      }
+    });
+  } catch (err) {
+    res.status(500).json({
+      connected: false,
+      error: err.message
+    });
   }
 });
 
