@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nifty OI Tracker — Live Change in OI</title>
   <style>
-    :root, [data-theme="dark"] {
+    :root,
+    [data-theme="dark"] {
       --bg: #0d0f14;
       --surface: #141720;
       --surface2: #1c2030;
@@ -533,8 +534,41 @@
       color: var(--bear);
     }
 
-    .chg-val.zero {
+    /* Volatility Regime Badge */
+    .vol-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-family: var(--font);
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: help;
+      position: relative;
+    }
+
+    .vol-high {
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    .vol-low {
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+    }
+
+    .vol-normal {
+      background: rgba(107, 114, 128, 0.2);
       color: var(--muted);
+      border: 1px solid rgba(107, 114, 128, 0.4);
+    }
+
+    .vol-history {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.4);
     }
 
     /* Anomaly badge */
@@ -768,7 +802,10 @@
             <span class="sub" id="mPCRsub">—</span>
           </div>
           <div class="metric-item">
-            <span class="label">IV Skew (ATM)</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="label" style="margin-bottom:0;">IV Skew (ATM)</span>
+              <span id="volRegimeBadge" class="vol-badge" title="Volatility Regime">—</span>
+            </div>
             <span class="val" id="mIvSkew">—</span>
             <span class="sub" id="mIvSkewSub">—</span>
           </div>
@@ -1143,6 +1180,24 @@
         document.getElementById('mIvSkewSub').textContent = '—';
       }
 
+      // Volatility Regime Badge
+      const volBadge = document.getElementById('volRegimeBadge');
+      if (d.volatilityRegime && volBadge) {
+        const vr = d.volatilityRegime;
+        volBadge.textContent = vr.badgeText;
+        volBadge.className = 'vol-badge ' + (
+          vr.regime === 'HIGH_IV' ? 'vol-high' :
+          vr.regime === 'LOW_IV' ? 'vol-low' :
+          vr.regime === 'NORMAL_IV' ? 'vol-normal' : 'vol-history'
+        );
+
+        if (vr.regime === 'INSUFFICIENT_HISTORY') {
+          volBadge.title = `Need at least 5 sessions (Current: ${vr.sampleCount})`;
+        } else {
+          volBadge.title = `z = ${vr.zScore > 0 ? '+' : ''}${vr.zScore} | 20-day avg IV: ${vr.mean20}% | StdDev: ${vr.stddev20}% | Today: ${vr.todayIv}%`;
+        }
+      }
+
       document.getElementById('mMaxPain').textContent = fmt(d.maxPain);
       document.getElementById('mTime').textContent = timeStr(d.fetchedAt);
 
@@ -1451,7 +1506,7 @@
       const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const filename = `Nifty_OI_${currentData.expiry || 'chain'}_${new Date().toISOString().slice(0,10)}.csv`;
+      const filename = `Nifty_OI_${currentData.expiry || 'chain'}_${new Date().toISOString().slice(0, 10)}.csv`;
       link.setAttribute('href', url);
       link.setAttribute('download', filename);
       document.body.appendChild(link);
@@ -1475,7 +1530,7 @@
         });
         const image = canvas.toDataURL('image/png');
         const link = document.createElement('a');
-        const filename = `Nifty_OI_Snapshot_${new Date().toISOString().slice(0,10)}.png`;
+        const filename = `Nifty_OI_Snapshot_${new Date().toISOString().slice(0, 10)}.png`;
         link.download = filename;
         link.href = image;
         link.click();
