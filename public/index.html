@@ -1062,18 +1062,9 @@
 
     function buildupSingle(chgOI, chgPrice, isCall) {
       const oiUp = chgOI >= 0;
-      const priceUp = chgPrice >= 0;
-      if (isCall) {
-        if (oiUp && priceUp) return { label: 'LONG BUILD', cls: 'bd-lb' };
-        if (oiUp && !priceUp) return { label: 'SHORT BUILD', cls: 'bd-sb' };
-        if (!oiUp && priceUp) return { label: 'SHORT COV', cls: 'bd-sc' };
-        return { label: 'LONG UNWD', cls: 'bd-lu' };
-      } else {
-        if (oiUp && !priceUp) return { label: 'LONG BUILD', cls: 'bd-lb' };
-        if (oiUp && priceUp) return { label: 'SHORT BUILD', cls: 'bd-sb' };
-        if (!oiUp && !priceUp) return { label: 'SHORT COV', cls: 'bd-sc' };
-        return { label: 'LONG UNWD', cls: 'bd-lu' };
-      }
+      const priceUp = isCall ? chgPrice >= 0 : chgPrice < 0;
+      if (oiUp) return priceUp ? { label: 'LONG BUILD', cls: 'bd-lb' } : { label: 'SHORT BUILD', cls: 'bd-sb' };
+      return priceUp ? { label: 'SHORT COV', cls: 'bd-sc' } : { label: 'LONG UNWD', cls: 'bd-lu' };
     }
 
     async function fetchNow() {
@@ -1317,8 +1308,6 @@
         const cAsk = ce.askPrice || 0;
         const pBid = pe.bidprice || 0;
         const pAsk = pe.askPrice || 0;
-        const cChgP = cLTP - (prevCE.lastPrice || cLTP);
-        const pChgP = pLTP - (prevPE.lastPrice || pLTP);
 
         const cBD = getSmoothedBuildup(r.strike, cOI, cLTP, true);
         const pBD = getSmoothedBuildup(r.strike, pOI, pLTP, false);

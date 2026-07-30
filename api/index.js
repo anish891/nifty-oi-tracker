@@ -1,6 +1,6 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
-require('dotenv').config();
+
 
 const express = require('express');
 const fetch = require('node-fetch');
@@ -323,6 +323,9 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   let maxCallOIStrike = atm;
   let maxPutOIStrike = atm;
 
+  let weightedCallValue = 0;
+  let weightedPutValue = 0;
+
   // Calculate stats on the FULL option chain
   allExpiryStrikes.forEach(s => {
     const cOI = s.CE?.openInterest || 0;
@@ -336,6 +339,9 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
 
     totalCallChgOI += cChg;
     totalPutChgOI += pChg;
+
+    weightedCallValue += cOI * (s.CE?.lastPrice || 0);
+    weightedPutValue += pOI * (s.PE?.lastPrice || 0);
 
     if (s.CE) {
       s.CE.anomaly = updateWelfordZScore(s.strike, cChg, true);
@@ -385,12 +391,6 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const ntmPcr = ntmCallOI > 0 ? ntmPutOI / ntmCallOI : 0;
 
   // Calculate Value-Weighted PCR (on the full chain)
-  let weightedCallValue = 0;
-  let weightedPutValue = 0;
-  allExpiryStrikes.forEach(s => {
-    weightedCallValue += (s.CE?.openInterest || 0) * (s.CE?.lastPrice || 0);
-    weightedPutValue += (s.PE?.openInterest || 0) * (s.PE?.lastPrice || 0);
-  });
   const weightedPcr = weightedCallValue > 0 ? weightedPutValue / weightedCallValue : 0;
 
   // Calculate Support & Resistance Strength (%) on full chain
