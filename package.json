@@ -5,7 +5,8 @@
   "main": "api/index.js",
   "scripts": {
     "start": "node api/index.js",
-    "dev": "node api/index.js"
+    "dev": "node api/index.js",
+    "test": "node api/verify-calculations.js"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

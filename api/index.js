@@ -608,14 +608,29 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
 
   function getDTEInYears(expiryStr) {
     if (!expiryStr) return 1 / 365;
-    const exp = new Date(expiryStr);
+    const parts = expiryStr.split('-');
+    let expDate = new Date();
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthIdx = monthNames.findIndex(m => m.toLowerCase() === parts[1].toLowerCase());
+      const year = parseInt(parts[2], 10);
+      if (monthIdx !== -1) {
+        // Construct 15:30 IST (10:00 UTC) expiration date
+        expDate = new Date(Date.UTC(year, monthIdx, day, 10, 0, 0));
+      } else {
+        expDate = new Date(expiryStr);
+      }
+    } else {
+      expDate = new Date(expiryStr);
+    }
     const now = new Date();
-    const diffTime = exp.getTime() - now.getTime();
-    const diffDays = diffTime / (1000 * 3600 * 24);
-    return Math.max(0.002, diffDays / 365); // min ~0.7 hours
+    const diffMs = expDate.getTime() - now.getTime();
+    const diffDays = diffMs / (1000 * 3600 * 24);
+    return Math.max(0.00005, diffDays / 365);
   }
 
-  function calculateOptionGamma(S, K, T, v, r = 0.07) {
+  function calculateOptionGamma(S, K, T, v, r = 0.065) {
     if (S <= 0 || K <= 0 || T <= 0 || v <= 0) return 0;
     const d1 = (Math.log(S / K) + (r + 0.5 * v * v) * T) / (v * Math.sqrt(T));
     const gamma = normalPdf(d1) / (S * v * Math.sqrt(T));
