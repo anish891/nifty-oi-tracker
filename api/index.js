@@ -241,6 +241,115 @@ function updateWelfordZScore(strike, oiChange, isCall, threshold = 2.5) {
   };
 }
 
+// ── UNUSUAL OPTIONS FLOW SCANNER ──
+const strikeTickBuffers = {
+  CE: {},
+  PE: {}
+};
+
+function updateAndDetectUnusualFlow(strike, volume, oiChg, isCall) {
+  const targetMap = isCall ? strikeTickBuffers.CE : strikeTickBuffers.PE;
+  if (!targetMap[strike]) targetMap[strike] = [];
+  const buf = targetMap[strike];
+
+  buf.push({ volume, oiChg: Math.abs(oiChg), ts: Date.now() });
+  if (buf.length > 20) buf.shift();
+
+  if (buf.length < 3) return null;
+
+  let sumVol = 0;
+  let sumOiChg = 0;
+  for (let i = 0; i < buf.length; i++) {
+    sumVol += buf[i].volume;
+    sumOiChg += buf[i].oiChg;
+  }
+  const meanVol = sumVol / buf.length;
+  const meanOiChg = sumOiChg / buf.length;
+
+  const volRatio = meanVol > 0 ? volume / meanVol : 1;
+  const oiRatio = meanOiChg > 0 ? Math.abs(oiChg) / meanOiChg : 1;
+
+  const isUnusual = (volRatio >= 2.2 && volume >= 4000) || (volRatio >= 1.6 && oiRatio >= 1.8 && volume >= 2500);
+  if (!isUnusual) return null;
+
+  const intensity = (volRatio >= 3.5 || oiRatio >= 3.0) ? 'CRITICAL' : 'HIGH';
+  const type = isCall ? 'CE' : 'PE';
+
+  return {
+    strike,
+    optionType: type,
+    volRatio: Number(volRatio.toFixed(1)),
+    oiRatio: Number(oiRatio.toFixed(1)),
+    intensity,
+    volume,
+    oiChg,
+    summary: `${strike} ${type}: ${volRatio.toFixed(1)}x Vol Surge (${(volume / 1000).toFixed(1)}k Vol)`
+  };
+}
+
+// ── COMPOSITE MARKET REGIME SYNTHESIZER ──
+function computeCompositeRegime(gexRegime, pcr, cprType, ivSkew, spot, maxPain) {
+  let regimeLabel = 'BALANCE & CONSOLIDATION';
+  let tacticalBias = 'NEUTRAL';
+  let confidenceScore = 75;
+  let primaryDrivers = [];
+  let actionableStrategy = 'Sell Iron Condors / Strangle near ATM';
+
+  const isNegGex = gexRegime === 'NEGATIVE_GAMMA';
+  const isPosGex = gexRegime === 'POSITIVE_GAMMA';
+  const isNarrowCpr = cprType === 'NARROW';
+  const isWideCpr = cprType === 'WIDE';
+  const isBullPcr = pcr > 1.15;
+  const isBearPcr = pcr < 0.85;
+
+  if (isNegGex && isNarrowCpr) {
+    regimeLabel = '⚡ EXPLOSIVE BREAKOUT SETUP';
+    tacticalBias = isBullPcr ? 'BULLISH_BREAKOUT' : isBearPcr ? 'BEARISH_BREAKOUT' : 'VOLATILE_EXPANSION';
+    confidenceScore = 92;
+    primaryDrivers = ['Negative Market GEX (Accelerated Moves)', 'Narrow CPR (Coiled Volatility)'];
+    actionableStrategy = isBullPcr ? 'Long Call Spreads / Breakout Continuation' : 'Long Straddle / Directional Momentum';
+  } else if (isPosGex && (isWideCpr || cprType === 'AVERAGE')) {
+    regimeLabel = '🎯 RANGE-BOUND PINNING';
+    tacticalBias = 'RANGE_BOUND';
+    confidenceScore = 88;
+    primaryDrivers = ['Positive Market GEX (Dealer Mean Reversion)', 'Wide/Average CPR (Support & Resistance Holds)'];
+    actionableStrategy = 'Sell Premium (Short Straddles / Iron Flys around Max Pain)';
+  } else if (isBullPcr && isNegGex && spot > maxPain) {
+    regimeLabel = '🚀 SHORT SQUEEZE RISK';
+    tacticalBias = 'STRONG_BULLISH';
+    confidenceScore = 85;
+    primaryDrivers = ['High Put-Call Ratio (Bullish Support)', 'Negative Gamma Squeeze Potential', 'Spot trading above Max Pain'];
+    actionableStrategy = 'Ride Upward Momentum with Trailing Stop Loss';
+  } else if (isBearPcr && isNegGex) {
+    regimeLabel = '📉 GAMMA SLIDE / CAPITULATION';
+    tacticalBias = 'STRONG_BEARISH';
+    confidenceScore = 86;
+    primaryDrivers = ['Low PCR (Heavy Call Selling)', 'Negative Gamma Cascading Liquidation'];
+    actionableStrategy = 'Buy Put Spreads / Fade Rallies into Resistance';
+  } else if (isPosGex && ivSkew > 1.2) {
+    regimeLabel = '🛡️ HEDGED CONSOLIDATION';
+    tacticalBias = 'NEUTRAL_ACCUMULATION';
+    confidenceScore = 80;
+    primaryDrivers = ['Dealer Long Gamma Buffer', 'Elevated Put IV Skew (Institutional Hedging)'];
+    actionableStrategy = 'Accumulate Quality Dips / Sell Put Spreads';
+  } else {
+    regimeLabel = '⚖️ BALANCED ACCUMULATION';
+    tacticalBias = isBullPcr ? 'MILD_BULLISH' : isBearPcr ? 'MILD_BEARISH' : 'NEUTRAL';
+    confidenceScore = 78;
+    primaryDrivers = [`PCR at ${pcr.toFixed(2)}`, `CPR Type: ${cprType}`, `Gamma: ${gexRegime}`];
+    actionableStrategy = 'Trade Support & Resistance Boundaries';
+  }
+
+  return {
+    regimeLabel,
+    tacticalBias,
+    confidenceScore,
+    primaryDrivers,
+    actionableStrategy
+  };
+}
+
+
 async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const now = Date.now();
 
@@ -326,6 +435,8 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
   let weightedCallValue = 0;
   let weightedPutValue = 0;
 
+  const unusualFlowAlerts = [];
+
   // Calculate stats on the FULL option chain
   allExpiryStrikes.forEach(s => {
     const cOI = s.CE?.openInterest || 0;
@@ -345,9 +456,19 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
 
     if (s.CE) {
       s.CE.anomaly = updateWelfordZScore(s.strike, cChg, true);
+      const ceFlow = updateAndDetectUnusualFlow(s.strike, s.CE.totalTradedVolume || 0, cChg, true);
+      if (ceFlow) {
+        s.CE.unusualFlow = ceFlow;
+        unusualFlowAlerts.push(ceFlow);
+      }
     }
     if (s.PE) {
       s.PE.anomaly = updateWelfordZScore(s.strike, pChg, false);
+      const peFlow = updateAndDetectUnusualFlow(s.strike, s.PE.totalTradedVolume || 0, pChg, false);
+      if (peFlow) {
+        s.PE.unusualFlow = peFlow;
+        unusualFlowAlerts.push(peFlow);
+      }
     }
 
     if (cOI > maxCallOI) {
@@ -636,6 +757,10 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
 
   const volatilityRegime = await computeVolatilityRegime(atmIv);
 
+  const cprTypeVal = cprWidthPct < 0.25 ? 'NARROW' : cprWidthPct > 0.6 ? 'WIDE' : 'AVERAGE';
+  const gexRegimeVal = totalGexCr >= 0 ? 'POSITIVE_GAMMA' : 'NEGATIVE_GAMMA';
+  const compositeRegime = computeCompositeRegime(gexRegimeVal, pcr, cprTypeVal, ivSkew, spot, maxPain);
+
   const result = {
     spot,
     atm,
@@ -652,13 +777,15 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
     ivSkew: Number(ivSkew.toFixed(2)),
     atmIv: Number(atmIv.toFixed(2)),
     volatilityRegime,
+    compositeRegime,
+    unusualActivity: unusualFlowAlerts,
     maxPain,
     gex: {
       totalGexCr: Number(totalGexCr.toFixed(2)),
       callGexCr: Number(callGexCr.toFixed(2)),
       putGexCr: Number(putGexCr.toFixed(2)),
       zeroGammaLevel,
-      gexRegime: totalGexCr >= 0 ? 'POSITIVE_GAMMA' : 'NEGATIVE_GAMMA',
+      gexRegime: gexRegimeVal,
       distToZeroGamma: Number((spot - zeroGammaLevel).toFixed(1))
     },
     cpr: {
@@ -667,7 +794,7 @@ async function fetchOptionChain(symbol = 'NIFTY', expiryDate = null) {
       bc: Number(bc.toFixed(1)),
       cprWidth: Number(cprWidth.toFixed(1)),
       cprWidthPct: Number(cprWidthPct.toFixed(2)),
-      cprType: cprWidthPct < 0.25 ? 'NARROW' : cprWidthPct > 0.6 ? 'WIDE' : 'AVERAGE',
+      cprType: cprTypeVal,
       r1: Number(r1.toFixed(1)),
       r2: Number(r2.toFixed(1)),
       s1: Number(s1.toFixed(1)),

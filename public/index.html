@@ -764,6 +764,35 @@
     </div>
   </div>
 
+  <!-- COMPOSITE REGIME HERO BANNER -->
+  <div id="heroRegimeBanner" style="padding: 12px 20px 0 20px;">
+    <div style="background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(16,185,129,0.08)); border: 1px solid rgba(59,130,246,0.25); border-radius: 8px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+      <div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent);">Composite Market Regime</span>
+          <span id="regimeConfidence" style="background: rgba(59,130,246,0.2); color: var(--accent); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;">Confidence: —</span>
+        </div>
+        <div id="regimeTitle" style="font-size: 18px; font-weight: 700; color: var(--text);">Analyzing Market Regime...</div>
+        <div id="regimeStrategy" style="font-size: 12px; color: var(--muted); margin-top: 2px;">Strategy: —</div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <span id="tacticalBiasBadge" style="padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; background: var(--surface2); color: var(--text);">Bias: —</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- UNUSUAL FLOW TICKER -->
+  <div id="unusualFlowSection" style="padding: 10px 20px 0 20px;">
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 12px;">
+      <span style="font-size: 11px; font-weight: 700; color: var(--warn); display: flex; align-items: center; gap: 4px; white-space: nowrap;">
+        🔥 Smart Money Flow:
+      </span>
+      <div id="flowAlertsFeed" style="display: flex; gap: 10px; overflow-x: auto; font-size: 11px; width: 100%;">
+        <span style="color: var(--muted);">Scanning for strike volume & OI anomalies...</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Metrics Dashboard -->
   <div class="metrics-dashboard" id="metricsRow">
     <!-- CARD 1: PRICE & RANGE -->
@@ -1235,6 +1264,35 @@
       else if (pcr < 0.8) { sentEl.textContent = 'Bearish'; sentEl.className = 'pcr-sent bear'; }
       else { sentEl.textContent = 'Neutral'; sentEl.className = 'pcr-sent warn'; }
 
+      // Composite Market Regime Banner
+      if (d.compositeRegime) {
+        const cr = d.compositeRegime;
+        document.getElementById('regimeTitle').textContent = cr.regimeLabel;
+        document.getElementById('regimeStrategy').textContent = 'Strategy: ' + cr.actionableStrategy;
+        document.getElementById('regimeConfidence').textContent = `Confidence: ${cr.confidenceScore}%`;
+
+        const biasBadge = document.getElementById('tacticalBiasBadge');
+        biasBadge.textContent = 'Bias: ' + cr.tacticalBias.replace('_', ' ');
+        biasBadge.className = 'val ' + (
+          cr.tacticalBias.includes('BULLISH') ? 'bull' :
+          cr.tacticalBias.includes('BEARISH') ? 'bear' : 'warn'
+        );
+      }
+
+      // Smart Money Flow Feed
+      const flowFeed = document.getElementById('flowAlertsFeed');
+      if (flowFeed) {
+        if (d.unusualActivity && d.unusualActivity.length > 0) {
+          flowFeed.innerHTML = d.unusualActivity.map(a => `
+            <span style="background: rgba(245,158,11,0.15); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
+              ${a.intensity === 'CRITICAL' ? '⚡' : '🔥'} ${a.summary}
+            </span>
+          `).join('');
+        } else {
+          flowFeed.innerHTML = '<span style="color: var(--muted);">No statistical volume/OI anomalies detected in recent ticks.</span>';
+        }
+      }
+
       fetchSimilarSessions();
       renderTable();
     }
@@ -1325,12 +1383,16 @@
         const cAnomalyHtml = ce.anomaly && ce.anomaly.isAnomaly ? `<span class="anomaly-badge" title="Z-Score: ${ce.anomaly.zScore}">🔥 z=${ce.anomaly.zScore}</span>` : '';
         const pAnomalyHtml = pe.anomaly && pe.anomaly.isAnomaly ? `<span class="anomaly-badge" title="Z-Score: ${pe.anomaly.zScore}">🔥 z=${pe.anomaly.zScore}</span>` : '';
 
+        const cFlowHtml = ce.unusualFlow ? `<span class="anomaly-badge" style="background:rgba(239,68,68,0.2); color:#f87171; border-color:rgba(239,68,68,0.4);" title="${ce.unusualFlow.summary}">⚡ ${ce.unusualFlow.volRatio}x Vol</span>` : '';
+        const pFlowHtml = pe.unusualFlow ? `<span class="anomaly-badge" style="background:rgba(16,185,129,0.2); color:#34d399; border-color:rgba(16,185,129,0.4);" title="${pe.unusualFlow.summary}">⚡ ${pe.unusualFlow.volRatio}x Vol</span>` : '';
+
         return `
     <tr class="${isATM ? 'atm-row' : ''} ${flashCls}" data-strike="${r.strike}">
       <td class="right">
         <div class="oi-bar-row">
           <span class="chg-val ${cChgCls}">${fmtChg(cChg)}</span>
           ${cAnomalyHtml}
+          ${cFlowHtml}
           <div class="bar-track"><div class="bar-fill call-fill" style="width:${cChgW}%"></div></div>
           <span class="bd ${cBD.cls}">${cBD.label}</span>
         </div>
@@ -1363,6 +1425,7 @@
           <span class="bd ${pBD.cls}">${pBD.label}</span>
           <div class="bar-track"><div class="bar-fill put-fill" style="width:${pChgW}%"></div></div>
           ${pAnomalyHtml}
+          ${pFlowHtml}
           <span class="chg-val ${pChgCls}">${fmtChg(pChg)}</span>
         </div>
       </td>
