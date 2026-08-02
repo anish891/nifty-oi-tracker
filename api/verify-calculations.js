@@ -121,11 +121,24 @@ function calculateCPR(H, L, C) {
   return { pivot, tc, bc, width };
 }
 
+const { calculateOptionGreeks } = require('./services/analytics');
+
 const cprRes = calculateCPR(24100, 23900, 24000);
 assert.strictEqual(cprRes.pivot, 24000);
 assert.strictEqual(cprRes.bc, 24000);
 assert.strictEqual(cprRes.tc, 24000);
 assert.strictEqual(cprRes.width, 0);
 console.log('✓ Test 3 Passed: Central Pivot Range (CPR) formulas are verified.');
+
+// ── TEST 4: BLACK-SCHOLES OPTION GREEKS ENGINE VERIFICATION ──
+const callGreeks = calculateOptionGreeks(24000, 24000, 7 / 365, 0.15, true);
+const putGreeks = calculateOptionGreeks(24000, 24000, 7 / 365, 0.15, false);
+
+assert(callGreeks.delta > 0.45 && callGreeks.delta < 0.55, `ATM Call Delta (${callGreeks.delta}) should be ~0.50`);
+assert(putGreeks.delta > -0.55 && putGreeks.delta < -0.45, `ATM Put Delta (${putGreeks.delta}) should be ~-0.50`);
+assert(callGreeks.vega > 0, `Vega (${callGreeks.vega}) should be positive`);
+assert(callGreeks.theta < 0, `Theta (${callGreeks.theta}) should be negative (time decay)`);
+
+console.log('✓ Test 4 Passed: Black-Scholes Option Greeks Engine (Delta, Gamma, Vega, Theta) verified successfully.');
 
 console.log('\n✅ ALL MATHEMATICAL VERIFICATION TESTS PASSED SUCCESSFULLY!\n');

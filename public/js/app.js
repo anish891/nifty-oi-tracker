@@ -304,6 +304,17 @@ export function renderTable() {
     const cFlowHtml = ce.unusualFlow ? `<span class="anomaly-badge" style="background:rgba(239,68,68,0.2); color:#f87171; border-color:rgba(239,68,68,0.4);" title="${ce.unusualFlow.summary}">⚡ ${ce.unusualFlow.volRatio}x Vol</span>` : '';
     const pFlowHtml = pe.unusualFlow ? `<span class="anomaly-badge" style="background:rgba(16,185,129,0.2); color:#34d399; border-color:rgba(16,185,129,0.4);" title="${pe.unusualFlow.summary}">⚡ ${pe.unusualFlow.volRatio}x Vol</span>` : '';
 
+    const cGreeks = ce.greeks || {};
+    const pGreeks = pe.greeks || {};
+
+    const cGreeksTitle = cGreeks.delta !== undefined
+      ? `Call Greeks:\nDelta (Δ): ${cGreeks.delta}\nGamma (Γ): ${cGreeks.gamma}\nVega (V): ₹${cGreeks.vega} / 1% IV\nTheta (Θ): ₹${cGreeks.theta} / day`
+      : '';
+
+    const pGreeksTitle = pGreeks.delta !== undefined
+      ? `Put Greeks:\nDelta (Δ): ${pGreeks.delta}\nGamma (Γ): ${pGreeks.gamma}\nVega (V): ₹${pGreeks.vega} / 1% IV\nTheta (Θ): ₹${pGreeks.theta} / day`
+      : '';
+
     return `
 <tr class="${isATM ? 'atm-row' : ''} ${flashCls}" data-strike="${r.strike}">
   <td class="right">
@@ -321,8 +332,8 @@ export function renderTable() {
       <div class="bar-track"><div class="bar-fill call-fill" style="width:${cBarW}%"></div></div>
     </div>
   </td>
-  <td class="right muted">${cIV ? cIV.toFixed(1) + '%' : '—'}</td>
-  <td class="right">${cLTP ? cLTP.toFixed(2) : '—'}</td>
+  <td class="right muted" title="${cGreeksTitle}">${cIV ? cIV.toFixed(1) + '%' : '—'}</td>
+  <td class="right" title="${cGreeksTitle}">${cLTP ? cLTP.toFixed(2) : '—'}</td>
   <td class="right muted" style="font-size:11px;">${cBid ? cBid.toFixed(1) + ' / ' + cAsk.toFixed(1) : '—'}</td>
 
   <td class="strike-cell ${isATM ? 'atm-row' : ''}">
@@ -330,8 +341,8 @@ export function renderTable() {
   </td>
 
   <td class="right muted" style="font-size:11px;">${pBid ? pBid.toFixed(1) + ' / ' + pAsk.toFixed(1) : '—'}</td>
-  <td class="right">${pLTP ? pLTP.toFixed(2) : '—'}</td>
-  <td class="right muted">${pIV ? pIV.toFixed(1) + '%' : '—'}</td>
+  <td class="right" title="${pGreeksTitle}">${pLTP ? pLTP.toFixed(2) : '—'}</td>
+  <td class="right muted" title="${pGreeksTitle}">${pIV ? pIV.toFixed(1) + '%' : '—'}</td>
   <td class="right">
     <div class="oi-bar-row left">
       <div class="bar-track"><div class="bar-fill put-fill" style="width:${pBarW}%"></div></div>

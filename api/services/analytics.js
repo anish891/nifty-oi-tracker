@@ -149,6 +149,14 @@ function normalPdf(x) {
   return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
 }
 
+function normalCdf(x) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989422804014327 * Math.exp(-x * x / 2);
+  let prob = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  if (x > 0) prob = 1 - prob;
+  return prob;
+}
+
 function getDTEInYears(expiryStr) {
   if (!expiryStr) return 1 / 365;
   const parts = expiryStr.split('-');
@@ -177,6 +185,42 @@ function calculateOptionGamma(S, K, T, v, r = 0.065) {
   const d1 = (Math.log(S / K) + (r + 0.5 * v * v) * T) / (v * Math.sqrt(T));
   const gamma = normalPdf(d1) / (S * v * Math.sqrt(T));
   return isNaN(gamma) ? 0 : gamma;
+}
+
+function calculateOptionGreeks(S, K, T, v, isCall, r = 0.065) {
+  if (S <= 0 || K <= 0 || T <= 0 || v <= 0) {
+    return { delta: 0, gamma: 0, vega: 0, theta: 0 };
+  }
+  const sqrtT = Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (r + 0.5 * v * v) * T) / (v * sqrtT);
+  const d2 = d1 - v * sqrtT;
+
+  const pdfD1 = normalPdf(d1);
+  const gamma = pdfD1 / (S * v * sqrtT);
+
+  let delta = 0;
+  let theta = 0;
+
+  if (isCall) {
+    delta = normalCdf(d1);
+    const term1 = -(S * pdfD1 * v) / (2 * sqrtT);
+    const term2 = r * K * Math.exp(-r * T) * normalCdf(d2);
+    theta = (term1 - term2) / 365;
+  } else {
+    delta = normalCdf(d1) - 1;
+    const term1 = -(S * pdfD1 * v) / (2 * sqrtT);
+    const term2 = r * K * Math.exp(-r * T) * normalCdf(-d2);
+    theta = (term1 + term2) / 365;
+  }
+
+  const vega = (S * sqrtT * pdfD1) * 0.01;
+
+  return {
+    delta: Number(delta.toFixed(3)),
+    gamma: Number(gamma.toFixed(6)),
+    vega: Number(vega.toFixed(2)),
+    theta: Number(theta.toFixed(2))
+  };
 }
 
 function computeCosineSimilarity(vecA, vecB) {
@@ -491,6 +535,18 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
     }
   }
 
+  // Calculate Option Greeks for display strikes
+  strikes.forEach(s => {
+    if (s.CE) {
+      const cIv = (s.CE.impliedVolatility || 0) / 100;
+      s.CE.greeks = calculateOptionGreeks(spot, s.strike, T, cIv, true);
+    }
+    if (s.PE) {
+      const pIv = (s.PE.impliedVolatility || 0) / 100;
+      s.PE.greeks = calculateOptionGreeks(spot, s.strike, T, pIv, false);
+    }
+  });
+
   // CPR Calculation
   const estHigh = Math.max(maxCallOIStrike, Math.round(upperRange));
   const estLow = Math.min(maxPutOIStrike, Math.round(lowerRange));
@@ -577,6 +633,7 @@ function getCacheData() {
 
 module.exports = {
   calculateOptionGamma,
+  calculateOptionGreeks,
   normalPdf,
   getDTEInYears,
   updateWelfordZScore,
