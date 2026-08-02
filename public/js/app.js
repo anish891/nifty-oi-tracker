@@ -119,8 +119,8 @@ export function renderAll() {
     volBadge.textContent = vr.badgeText;
     volBadge.className = 'vol-badge ' + (
       vr.regime === 'HIGH_IV' ? 'vol-high' :
-      vr.regime === 'LOW_IV' ? 'vol-low' :
-      vr.regime === 'NORMAL_IV' ? 'vol-normal' : 'vol-history'
+        vr.regime === 'LOW_IV' ? 'vol-low' :
+          vr.regime === 'NORMAL_IV' ? 'vol-normal' : 'vol-history'
     );
 
     if (vr.regime === 'INSUFFICIENT_HISTORY') {
@@ -195,7 +195,7 @@ export function renderAll() {
       biasBadge.textContent = 'Bias: ' + cr.tacticalBias.replace('_', ' ');
       biasBadge.className = 'val ' + (
         cr.tacticalBias.includes('BULLISH') ? 'bull' :
-        cr.tacticalBias.includes('BEARISH') ? 'bear' : 'warn'
+          cr.tacticalBias.includes('BEARISH') ? 'bear' : 'warn'
       );
     }
   }
