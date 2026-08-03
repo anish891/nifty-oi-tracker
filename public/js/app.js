@@ -551,15 +551,17 @@ export async function exportPDF() {
     try {
       const element = document.body;
       const opt = {
-        margin:       [0.2, 0.2, 0.2, 0.2],
-        filename:     `Nifty_OI_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
-        image:        { type: 'jpeg', quality: 0.95 },
-        html2canvas:  { scale: 1.2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' },
-        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+        margin: [0.2, 0.2, 0.2, 0.2],
+        filename: `Nifty_OI_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 1.5, useCORS: true, logging: false },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape', compress: true },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+        enableLinks: true
       };
 
       if (window.html2pdf) {
+        // html2pdf automatically renders the exact DOM layout while preserving selectable searchable text overlay
         await window.html2pdf().set(opt).from(element).save();
       } else {
         throw new Error('PDF library failed to load');
