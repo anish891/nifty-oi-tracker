@@ -546,19 +546,26 @@ export async function exportPDF() {
   if (btn) btn.textContent = '⏳ Generating PDF...';
 
   const generatePDF = async () => {
-    const element = document.body;
-    const opt = {
-      margin:       0.3,
-      filename:     `Nifty_OI_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' }
-    };
+    // Add print/pdf container styling temporarily to fit 2 landscape pages
+    document.body.classList.add('exporting-pdf');
+    try {
+      const element = document.body;
+      const opt = {
+        margin:       [0.2, 0.2, 0.2, 0.2],
+        filename:     `Nifty_OI_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
+        image:        { type: 'jpeg', quality: 0.95 },
+        html2canvas:  { scale: 1.2, useCORS: true, logging: false },
+        jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' },
+        pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+      };
 
-    if (window.html2pdf) {
-      await window.html2pdf().set(opt).from(element).save();
-    } else {
-      throw new Error('PDF library failed to load');
+      if (window.html2pdf) {
+        await window.html2pdf().set(opt).from(element).save();
+      } else {
+        throw new Error('PDF library failed to load');
+      }
+    } finally {
+      document.body.classList.remove('exporting-pdf');
     }
   };
 
