@@ -535,6 +535,63 @@ export async function takeSnapshot() {
   }
 }
 
+export async function exportPDF() {
+  if (!currentData || !currentData.strikes) {
+    alert('No data available to export yet!');
+    return;
+  }
+
+  const btn = document.getElementById('btnPDF');
+  const originalText = btn ? btn.textContent : '📄 PDF';
+  if (btn) btn.textContent = '⏳ Generating PDF...';
+
+  const generatePDF = async () => {
+    const element = document.body;
+    const opt = {
+      margin:       0.3,
+      filename:     `Nifty_OI_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' }
+    };
+
+    if (window.html2pdf) {
+      await window.html2pdf().set(opt).from(element).save();
+    } else {
+      throw new Error('PDF library failed to load');
+    }
+  };
+
+  try {
+    if (typeof window.html2pdf === 'undefined') {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      script.onload = async () => {
+        try {
+          await generatePDF();
+        } catch (e) {
+          console.error('PDF generation error:', e);
+          alert('Failed to generate PDF document.');
+        } finally {
+          if (btn) btn.textContent = originalText;
+        }
+      };
+      script.onerror = () => {
+        alert('Failed to load PDF export library.');
+        if (btn) btn.textContent = originalText;
+      };
+      document.head.appendChild(script);
+    } else {
+      await generatePDF();
+      if (btn) btn.textContent = originalText;
+    }
+  } catch (err) {
+    console.error('PDF export failed:', err);
+    alert('Failed to export PDF.');
+    if (btn) btn.textContent = originalText;
+  }
+}
+
 // Global window exposure for inline event handlers
 window.fetchNow = fetchNow;
 window.onIntervalChange = onIntervalChange;
@@ -542,6 +599,7 @@ window.onExpiryChange = onExpiryChange;
 window.onThemeSelectChange = onThemeSelectChange;
 window.sortTable = sortTable;
 window.exportCSV = exportCSV;
+window.exportPDF = exportPDF;
 window.takeSnapshot = takeSnapshot;
 
 // Initialization
