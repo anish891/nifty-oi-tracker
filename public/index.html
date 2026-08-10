@@ -97,6 +97,74 @@
     </div>
   </div>
 
+  <!-- ATM STRADDLE & EXPECTED MOVE CALCULATOR CARD -->
+  <div id="straddleCalculatorSection" style="padding: 12px 20px 0 20px;">
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+            🎯 ATM Straddle Price & Intraday Expected Move Calculator
+          </span>
+          <span id="straddleAtmBadge" style="background: rgba(59,130,246,0.15); color: var(--accent); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">ATM: —</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; font-size: 11px;">
+          <span style="color: var(--muted);">Decay Status:</span>
+          <span id="straddleDecayBadge" style="padding: 2px 8px; border-radius: 4px; font-weight: 600; background: var(--surface2); color: var(--text);">—</span>
+        </div>
+      </div>
+
+      <!-- Main Straddle & Move Grid -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px;">
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">ATM CE / PE Premium</div>
+          <div style="font-size: 15px; font-weight: 700; color: var(--text); margin-top: 2px;">
+            <span style="color: var(--bear);" id="straddleCeLtp">CE: —</span>
+            <span style="color: var(--muted); margin: 0 4px;">|</span>
+            <span style="color: var(--bull);" id="straddlePeLtp">PE: —</span>
+          </div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Individual Option LTPs</div>
+        </div>
+
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Total Straddle Premium</div>
+          <div id="straddleTotalLtp" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">—</div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
+            Open: <span id="straddleOpenPrice">—</span> | High: <span id="straddleHighPrice">—</span> | Low: <span id="straddleLowPrice">—</span>
+          </div>
+        </div>
+
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">0.85x Expected Day Move</div>
+          <div id="straddleExpectedMove" style="font-size: 16px; font-weight: 700; color: var(--warn); margin-top: 2px;">± — pts (—%)</div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
+            Formula: <span style="font-family: monospace;">Straddle × 0.85</span>
+          </div>
+        </div>
+
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Expected Day Bounds</div>
+          <div id="straddleRangeBounds" style="font-size: 14px; font-weight: 700; color: var(--text); margin-top: 2px;">—</div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
+            Lower <span style="color: var(--bull);" id="straddleLowerBound">—</span> to Upper <span style="color: var(--bear);" id="straddleUpperBound">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spot Position & Expected Move Gauge -->
+      <div style="background: var(--bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border);">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
+          <span>Lower Bound: <strong id="gaugeLowerLabel" style="color: var(--bull);">—</strong></span>
+          <span>Spot: <strong id="gaugeSpotLabel" style="color: var(--accent);">—</strong></span>
+          <span>Upper Bound: <strong id="gaugeUpperLabel" style="color: var(--bear);">—</strong></span>
+        </div>
+        <div style="position: relative; height: 10px; background: var(--surface2); border-radius: 5px; overflow: hidden;">
+          <div id="gaugeExpectedFill" style="position: absolute; left: 0%; width: 100%; height: 100%; background: linear-gradient(90deg, rgba(16,185,129,0.3), rgba(59,130,246,0.4), rgba(239,68,68,0.3));"></div>
+          <div id="gaugeSpotMarker" style="position: absolute; left: 50%; top: 0; width: 4px; height: 100%; background: #ffffff; box-shadow: 0 0 6px rgba(255,255,255,0.8); transform: translateX(-50%); transition: left 0.3s ease;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Metrics Dashboard -->
   <div class="metrics-dashboard" id="metricsRow">
     <!-- CARD 1: PRICE & RANGE -->

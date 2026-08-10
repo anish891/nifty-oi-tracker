@@ -141,4 +141,20 @@ assert(callGreeks.theta < 0, `Theta (${callGreeks.theta}) should be negative (ti
 
 console.log('✓ Test 4 Passed: Black-Scholes Option Greeks Engine (Delta, Gamma, Vega, Theta) verified successfully.');
 
+// ── TEST 5: ATM STRADDLE PRICE & EXPECTED DAY MOVE (0.85x) VERIFICATION ──
+const spot = 24000;
+const ceLtp = 120;
+const peLtp = 100;
+const straddlePrice = ceLtp + peLtp;
+const expectedMove = straddlePrice * 0.85;
+const expectedUpper = spot + expectedMove;
+const expectedLower = spot - expectedMove;
+
+assert.strictEqual(straddlePrice, 220);
+assert.strictEqual(expectedMove, 187);
+assert.strictEqual(expectedUpper, 24187);
+assert.strictEqual(expectedLower, 23813);
+
+console.log('✓ Test 5 Passed: ATM Straddle Price & 0.85x Intraday Expected Move formula verified successfully.');
+
 console.log('\n✅ ALL MATHEMATICAL VERIFICATION TESTS PASSED SUCCESSFULLY!\n');

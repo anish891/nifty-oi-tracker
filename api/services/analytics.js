@@ -44,6 +44,15 @@ const strikeTickBuffers = {
   PE: {}
 };
 
+const straddleTracker = {
+  expiry: null,
+  atm: null,
+  openStraddle: null,
+  highStraddle: 0,
+  lowStraddle: Infinity,
+  history: []
+};
+
 function updateAndDetectUnusualFlow(strike, volume, oiChg, isCall) {
   const targetMap = isCall ? strikeTickBuffers.CE : strikeTickBuffers.PE;
   if (!targetMap[strike]) targetMap[strike] = [];
@@ -413,8 +422,33 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const atmCELTP = atmCE.lastPrice || 0;
   const atmPELTP = atmPE.lastPrice || 0;
   const straddlePrice = atmCELTP + atmPELTP;
-  const upperRange = spot + straddlePrice;
-  const lowerRange = spot - straddlePrice;
+  const expectedMove = straddlePrice * 0.85;
+  const upperRange = spot + expectedMove;
+  const lowerRange = spot - expectedMove;
+  const expectedMovePct = spot > 0 ? (expectedMove / spot) * 100 : 0;
+
+  if (
+    straddleTracker.expiry !== targetExpiry ||
+    straddleTracker.atm !== atm ||
+    !straddleTracker.openStraddle
+  ) {
+    straddleTracker.expiry = targetExpiry;
+    straddleTracker.atm = atm;
+    straddleTracker.openStraddle = straddlePrice;
+    straddleTracker.highStraddle = straddlePrice;
+    straddleTracker.lowStraddle = straddlePrice;
+    straddleTracker.history = [];
+  }
+
+  if (straddlePrice > 0) {
+    if (!straddleTracker.openStraddle) straddleTracker.openStraddle = straddlePrice;
+    straddleTracker.highStraddle = Math.max(straddleTracker.highStraddle || straddlePrice, straddlePrice);
+    straddleTracker.lowStraddle = Math.min(straddleTracker.lowStraddle || straddlePrice, straddlePrice);
+  }
+
+  const straddleOpen = straddleTracker.openStraddle || straddlePrice;
+  const straddleDecayPct = straddleOpen > 0 ? ((straddleOpen - straddlePrice) / straddleOpen) * 100 : 0;
+  const straddleDecayStatus = straddleDecayPct > 0.5 ? 'DECAYING' : straddleDecayPct < -0.5 ? 'EXPANDING' : 'STABLE';
 
   const atmIndex = strikes.findIndex(s => s.strike === atm);
   let ntmCallOI = 0;
@@ -579,6 +613,21 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
     straddlePrice: Number(straddlePrice.toFixed(2)),
     upperRange: Number(upperRange.toFixed(2)),
     lowerRange: Number(lowerRange.toFixed(2)),
+    straddleDetails: {
+      atm,
+      ceLtp: Number(atmCELTP.toFixed(2)),
+      peLtp: Number(atmPELTP.toFixed(2)),
+      straddlePrice: Number(straddlePrice.toFixed(2)),
+      expectedMove: Number(expectedMove.toFixed(2)),
+      expectedMovePct: Number(expectedMovePct.toFixed(2)),
+      upperRange: Number(upperRange.toFixed(2)),
+      lowerRange: Number(lowerRange.toFixed(2)),
+      openStraddle: Number(straddleOpen.toFixed(2)),
+      highStraddle: Number((straddleTracker.highStraddle || straddlePrice).toFixed(2)),
+      lowStraddle: Number((straddleTracker.lowStraddle || straddlePrice).toFixed(2)),
+      decayPct: Number(straddleDecayPct.toFixed(2)),
+      decayStatus: straddleDecayStatus
+    },
     resistanceStrength: Number(resistanceStrength.toFixed(1)),
     supportStrength: Number(supportStrength.toFixed(1)),
     ivSkew: Number(ivSkew.toFixed(2)),

@@ -78,6 +78,67 @@ export function renderAll() {
   }
   document.getElementById('mStraddlePrice').textContent = d.straddlePrice ? fmt(Math.round(d.straddlePrice)) : '—';
 
+  // Populate ATM Straddle & Expected Move Calculator
+  if (d.straddleDetails) {
+    const sd = d.straddleDetails;
+    const atmBadge = document.getElementById('straddleAtmBadge');
+    if (atmBadge) atmBadge.textContent = `ATM: ${fmt(sd.atm)}`;
+    const ceLtp = document.getElementById('straddleCeLtp');
+    if (ceLtp) ceLtp.textContent = `CE: ₹${sd.ceLtp.toFixed(2)}`;
+    const peLtp = document.getElementById('straddlePeLtp');
+    if (peLtp) peLtp.textContent = `PE: ₹${sd.peLtp.toFixed(2)}`;
+    const totalLtp = document.getElementById('straddleTotalLtp');
+    if (totalLtp) totalLtp.textContent = `₹${sd.straddlePrice.toFixed(2)}`;
+    const openPrice = document.getElementById('straddleOpenPrice');
+    if (openPrice) openPrice.textContent = `₹${sd.openStraddle.toFixed(2)}`;
+    const highPrice = document.getElementById('straddleHighPrice');
+    if (highPrice) highPrice.textContent = `₹${sd.highStraddle.toFixed(2)}`;
+    const lowPrice = document.getElementById('straddleLowPrice');
+    if (lowPrice) lowPrice.textContent = `₹${sd.lowStraddle.toFixed(2)}`;
+
+    const expMove = document.getElementById('straddleExpectedMove');
+    if (expMove) expMove.textContent = `± ${sd.expectedMove.toFixed(1)} pts (${sd.expectedMovePct.toFixed(2)}%)`;
+    const rangeBounds = document.getElementById('straddleRangeBounds');
+    if (rangeBounds) rangeBounds.textContent = `${fmt(Math.round(sd.lowerRange))} - ${fmt(Math.round(sd.upperRange))}`;
+    const lowerB = document.getElementById('straddleLowerBound');
+    if (lowerB) lowerB.textContent = fmt(Math.round(sd.lowerRange));
+    const upperB = document.getElementById('straddleUpperBound');
+    if (upperB) upperB.textContent = fmt(Math.round(sd.upperRange));
+
+    const decayBadge = document.getElementById('straddleDecayBadge');
+    if (decayBadge) {
+      if (sd.decayStatus === 'DECAYING') {
+        decayBadge.textContent = `📉 ${sd.decayPct.toFixed(1)}% Decay`;
+        decayBadge.style.background = 'rgba(16,185,129,0.15)';
+        decayBadge.style.color = 'var(--bull)';
+      } else if (sd.decayStatus === 'EXPANDING') {
+        decayBadge.textContent = `📈 ${Math.abs(sd.decayPct).toFixed(1)}% Expansion`;
+        decayBadge.style.background = 'rgba(239,68,68,0.15)';
+        decayBadge.style.color = 'var(--bear)';
+      } else {
+        decayBadge.textContent = `⚖️ Stable (${sd.decayPct.toFixed(1)}%)`;
+        decayBadge.style.background = 'var(--surface2)';
+        decayBadge.style.color = 'var(--text)';
+      }
+    }
+
+    const gaugeSpotLabel = document.getElementById('gaugeSpotLabel');
+    const gaugeLowerLabel = document.getElementById('gaugeLowerLabel');
+    const gaugeUpperLabel = document.getElementById('gaugeUpperLabel');
+    const gaugeSpotMarker = document.getElementById('gaugeSpotMarker');
+
+    if (gaugeSpotLabel) gaugeSpotLabel.textContent = fmt(d.spot);
+    if (gaugeLowerLabel) gaugeLowerLabel.textContent = fmt(Math.round(sd.lowerRange));
+    if (gaugeUpperLabel) gaugeUpperLabel.textContent = fmt(Math.round(sd.upperRange));
+
+    if (gaugeSpotMarker && sd.upperRange > sd.lowerRange) {
+      const rangeSpan = sd.upperRange - sd.lowerRange;
+      let pct = ((d.spot - sd.lowerRange) / rangeSpan) * 100;
+      pct = Math.max(0, Math.min(100, pct));
+      gaugeSpotMarker.style.left = `${pct.toFixed(1)}%`;
+    }
+  }
+
   document.getElementById('mCallOI').textContent = fmtK(d.totalCallOI);
   document.getElementById('mPutOI').textContent = fmtK(d.totalPutOI);
   document.getElementById('mCallChg').textContent = 'Chg: ' + fmtChg(d.totalCallChgOI);
