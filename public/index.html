@@ -341,15 +341,29 @@
   </div>
 
   <!-- Table -->
+  <div style="padding: 10px 20px 0 20px; display: flex; justify-content: space-between; align-items: center;">
+    <div style="font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px;">
+      <span>⚡ Live Option Chain & Option Greeks</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 11px;">
+      <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px;">
+        <input type="checkbox" id="toggleGreeksBtn" onchange="window.toggleGreeksView && window.toggleGreeksView()" style="accent-color: var(--accent);">
+        <span>Show Real-Time Greeks (Delta Δ / Theta Θ)</span>
+      </label>
+    </div>
+  </div>
+
   <div class="table-wrap">
     <table id="chainTable">
       <thead>
         <tr class="thead-section">
-          <th colspan="5" class="call-head">CALLS</th>
+          <th colspan="5" id="callHeaderColspan" class="call-head">CALLS</th>
           <th class="strike-head">STRIKE</th>
-          <th colspan="5" class="put-head">PUTS</th>
+          <th colspan="5" id="putHeaderColspan" class="put-head">PUTS</th>
         </tr>
         <tr class="thead-cols">
+          <th class="right greeks-col hidden-greeks" onclick="sortTable('callDelta')">Delta (Δ)</th>
+          <th class="right greeks-col hidden-greeks" onclick="sortTable('callTheta')">Theta (Θ)</th>
           <th class="right" onclick="sortTable('callChgOI')">Chg OI</th>
           <th class="right" onclick="sortTable('callOI')">OI</th>
           <th class="right" onclick="sortTable('callIV')">IV%</th>
@@ -361,11 +375,13 @@
           <th class="right" onclick="sortTable('putIV')">IV%</th>
           <th class="right" onclick="sortTable('putOI')">OI</th>
           <th class="right" onclick="sortTable('putChgOI')">Chg OI</th>
+          <th class="right greeks-col hidden-greeks" onclick="sortTable('putDelta')">Delta (Δ)</th>
+          <th class="right greeks-col hidden-greeks" onclick="sortTable('putTheta')">Theta (Θ)</th>
         </tr>
       </thead>
       <tbody id="chainBody">
         <tr>
-          <td colspan="11" style="text-align:center;color:var(--muted);padding:40px;">Loading data…</td>
+          <td colspan="15" style="text-align:center;color:var(--muted);padding:40px;">Loading data…</td>
         </tr>
       </tbody>
     </table>

@@ -742,3 +742,7 @@ body.exporting-pdf .footer {
   position: static !important;
   padding: 6px 12px !important;
 }
+
+.hidden-greeks {
+  display: none !important;
+}

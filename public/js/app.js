@@ -376,8 +376,16 @@ export function renderTable() {
       ? `Put Greeks:\nDelta (Δ): ${pGreeks.delta}\nGamma (Γ): ${pGreeks.gamma}\nVega (V): ₹${pGreeks.vega} / 1% IV\nTheta (Θ): ₹${pGreeks.theta} / day`
       : '';
 
+    const cGreeksClass = window.showGreeks ? '' : 'hidden-greeks';
+    const cDeltaVal = cGreeks.delta !== undefined ? cGreeks.delta : '—';
+    const cThetaVal = cGreeks.theta !== undefined ? `₹${cGreeks.theta}` : '—';
+    const pDeltaVal = pGreeks.delta !== undefined ? pGreeks.delta : '—';
+    const pThetaVal = pGreeks.theta !== undefined ? `₹${pGreeks.theta}` : '—';
+
     return `
 <tr class="${isATM ? 'atm-row' : ''} ${flashCls}" data-strike="${r.strike}">
+  <td class="right greeks-col ${cGreeksClass} ${cDeltaVal > 0.5 ? 'pos' : ''}" style="font-family:var(--mono); font-size:11px;">${cDeltaVal}</td>
+  <td class="right greeks-col ${cGreeksClass} neg" style="font-family:var(--mono); font-size:11px;">${cThetaVal}</td>
   <td class="right">
     <div class="oi-bar-row">
       <span class="chg-val ${cChgCls}">${fmtChg(cChg)}</span>
@@ -419,6 +427,8 @@ export function renderTable() {
       <span class="chg-val ${pChgCls}">${fmtChg(pChg)}</span>
     </div>
   </td>
+  <td class="right greeks-col ${cGreeksClass} ${Math.abs(pDeltaVal) > 0.5 ? 'pos' : ''}" style="font-family:var(--mono); font-size:11px;">${pDeltaVal}</td>
+  <td class="right greeks-col ${cGreeksClass} neg" style="font-family:var(--mono); font-size:11px;">${pThetaVal}</td>
 </tr>`;
   }).join('');
 }
@@ -426,19 +436,40 @@ export function renderTable() {
 export function getSortVal(row, col) {
   const ce = row.CE || {};
   const pe = row.PE || {};
+  const cG = ce.greeks || {};
+  const pG = pe.greeks || {};
   const map = {
+    callDelta: cG.delta !== undefined ? cG.delta : 0,
+    callTheta: cG.theta !== undefined ? cG.theta : 0,
     callChgOI: ce.changeinOpenInterest || 0,
     callOI: ce.openInterest || 0,
     callIV: ce.impliedVolatility || 0,
     callLTP: ce.lastPrice || 0,
     callBid: ce.bidprice || 0,
-    putChgOI: pe.changeinOpenInterest || 0,
-    putOI: pe.openInterest || 0,
-    putIV: pe.impliedVolatility || 0,
-    putLTP: pe.lastPrice || 0,
     putBid: pe.bidprice || 0,
+    putLTP: pe.lastPrice || 0,
+    putIV: pe.impliedVolatility || 0,
+    putOI: pe.openInterest || 0,
+    putChgOI: pe.changeinOpenInterest || 0,
+    putDelta: pG.delta !== undefined ? pG.delta : 0,
+    putTheta: pG.theta !== undefined ? pG.theta : 0,
   };
   return map[col] !== undefined ? map[col] : row.strike;
+}
+
+export function toggleGreeksView() {
+  const chk = document.getElementById('toggleGreeksBtn');
+  window.showGreeks = chk ? chk.checked : false;
+
+  const callColspan = document.getElementById('callHeaderColspan');
+  const putColspan = document.getElementById('putHeaderColspan');
+  if (callColspan) callColspan.colSpan = window.showGreeks ? 7 : 5;
+  if (putColspan) putColspan.colSpan = window.showGreeks ? 7 : 5;
+
+  const greeksCols = document.querySelectorAll('.greeks-col');
+  greeksCols.forEach(col => {
+    col.classList.toggle('hidden-greeks', !window.showGreeks);
+  });
 }
 
 export function sortTable(col) {
@@ -668,6 +699,7 @@ window.onIntervalChange = onIntervalChange;
 window.onExpiryChange = onExpiryChange;
 window.onThemeSelectChange = onThemeSelectChange;
 window.sortTable = sortTable;
+window.toggleGreeksView = toggleGreeksView;
 window.exportCSV = exportCSV;
 window.exportPDF = exportPDF;
 window.takeSnapshot = takeSnapshot;
