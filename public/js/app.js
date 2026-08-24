@@ -693,6 +693,25 @@ export async function exportPDF() {
   }
 }
 
+// Dropdown Menu Handlers
+export function toggleExportMenu(e) {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('exportDropdown');
+  if (dd) dd.classList.toggle('active');
+}
+
+export function closeExportMenu() {
+  const dd = document.getElementById('exportDropdown');
+  if (dd) dd.classList.remove('active');
+}
+
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('exportDropdown');
+  if (dd && !dd.contains(e.target)) {
+    dd.classList.remove('active');
+  }
+});
+
 // Global window exposure for inline event handlers
 window.fetchNow = fetchNow;
 window.onIntervalChange = onIntervalChange;
@@ -703,6 +722,8 @@ window.toggleGreeksView = toggleGreeksView;
 window.exportCSV = exportCSV;
 window.exportPDF = exportPDF;
 window.takeSnapshot = takeSnapshot;
+window.toggleExportMenu = toggleExportMenu;
+window.closeExportMenu = closeExportMenu;
 
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {

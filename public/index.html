@@ -26,15 +26,22 @@
     <div class="status-text" id="statusText">Connecting…</div>
 
     <div class="topbar-right">
-      <button onclick="exportCSV()" title="Export Option Chain to CSV">
-        📥 CSV
-      </button>
-      <button id="btnPDF" onclick="exportPDF()" title="Export Option Chain & Report to PDF">
-        📄 PDF
-      </button>
-      <button id="btnSnapshot" onclick="takeSnapshot()" title="Save Screenshot of Dashboard">
-        📷 Snapshot
-      </button>
+      <div class="dropdown" id="exportDropdown">
+        <button class="dropdown-toggle" onclick="toggleExportMenu(event)" title="Export Data & Analytics">
+          📥 Export <span class="dropdown-caret">▾</span>
+        </button>
+        <div class="dropdown-menu" id="exportMenu">
+          <button class="dropdown-item" onclick="exportCSV(); closeExportMenu();" title="Export Option Chain to CSV">
+            <span class="item-icon">📊</span> Option Chain (CSV)
+          </button>
+          <button class="dropdown-item" id="btnPDF" onclick="exportPDF(); closeExportMenu();" title="Export Option Chain & Report to PDF">
+            <span class="item-icon">📄</span> Analytics Summary (PDF)
+          </button>
+          <button class="dropdown-item" id="btnSnapshot" onclick="takeSnapshot(); closeExportMenu();" title="Save Screenshot of Dashboard">
+            <span class="item-icon">📷</span> Dashboard (Snapshot)
+          </button>
+        </div>
+      </div>
       <label class="interval-label">Theme</label>
       <select id="themeSelect" onchange="onThemeSelectChange()" title="Select Theme">
         <option value="system">💻 System</option>
