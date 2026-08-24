@@ -1078,13 +1078,13 @@ function buildPdfReportElement(d) {
         </thead>
         <tbody>
           ${(d.strikes || []).map(s => {
-    const isAtm = s.strike === d.atm;
-    const bg = isAtm ? '#dbeafe' : '#ffffff';
-    const fontWeight = isAtm ? '700' : '400';
-    const ceChg = s.CE?.changeinOpenInterest || 0;
-    const peChg = s.PE?.changeinOpenInterest || 0;
+            const isAtm = s.strike === d.atm;
+            const bg = isAtm ? '#dbeafe' : '#ffffff';
+            const fontWeight = isAtm ? '700' : '400';
+            const ceChg = s.CE?.changeinOpenInterest || 0;
+            const peChg = s.PE?.changeinOpenInterest || 0;
 
-    return `
+            return `
               <tr style="background: ${bg}; font-weight: ${fontWeight}; border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 4px 6px; color: ${ceChg >= 0 ? '#059669' : '#dc2626'};">${fmtChg(ceChg)}</td>
                 <td style="padding: 4px 6px;">${fmtK(s.CE?.openInterest || 0)}</td>
@@ -1097,7 +1097,7 @@ function buildPdfReportElement(d) {
                 <td style="padding: 4px 6px; color: ${peChg >= 0 ? '#059669' : '#dc2626'};">${fmtChg(peChg)}</td>
               </tr>
             `;
-  }).join('')}
+          }).join('')}
         </tbody>
       </table>
     </div>
