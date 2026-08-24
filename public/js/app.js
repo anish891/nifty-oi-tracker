@@ -620,11 +620,7 @@ export function getSortVal(row, col) {
 
 export function toggleGreeksView() {
   const chk = document.getElementById('toggleGreeksBtn');
-  if (chk) {
-    window.showGreeks = chk.checked;
-  } else {
-    window.showGreeks = !window.showGreeks;
-  }
+  window.showGreeks = chk ? chk.checked : false;
 
   const callColspan = document.getElementById('callHeaderColspan');
   const putColspan = document.getElementById('putHeaderColspan');
@@ -636,104 +632,6 @@ export function toggleGreeksView() {
     col.classList.toggle('hidden-greeks', !window.showGreeks);
   });
 }
-
-// Toast Feedback Notification Helper
-export function showToast(message) {
-  let toast = document.getElementById('shortcutToast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.id = 'shortcutToast';
-    toast.style.cssText = `
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--accent);
-      padding: 8px 16px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-      z-index: 9999;
-      pointer-events: none;
-      transition: opacity 0.2s ease, transform 0.2s ease;
-      opacity: 0;
-      transform: translateY(10px);
-    `;
-    document.body.appendChild(toast);
-  }
-
-  toast.textContent = message;
-  toast.style.opacity = '1';
-  toast.style.transform = 'translateY(0)';
-
-  if (toast.timeoutId) clearTimeout(toast.timeoutId);
-  toast.timeoutId = setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateY(10px)';
-  }, 1800);
-}
-
-// Keyboard Shortcuts Handler (R: Refresh, G: Greeks Toggle, S: Snapshot)
-export function setupKeyboardShortcuts() {
-  document.addEventListener('keydown', (e) => {
-    const activeEl = document.activeElement;
-    if (
-      activeEl &&
-      (activeEl.tagName === 'INPUT' ||
-        activeEl.tagName === 'TEXTAREA' ||
-        activeEl.isContentEditable)
-    ) {
-      return;
-    }
-
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-    const key = (e.key || '').toUpperCase();
-    const code = e.code || '';
-
-    if (key === 'R' || code === 'KeyR') {
-      e.preventDefault();
-      showToast('↻ Data Refreshed [Shortcut R]');
-      fetchNow();
-    } else if (key === 'G' || code === 'KeyG') {
-      e.preventDefault();
-      const chk = document.getElementById('toggleGreeksBtn');
-      if (chk) {
-        chk.checked = !chk.checked;
-      }
-      toggleGreeksView();
-      showToast(window.showGreeks ? '📊 Greeks Shown [Shortcut G]' : '📊 Greeks Hidden [Shortcut G]');
-    } else if (key === 'S' || code === 'KeyS') {
-      e.preventDefault();
-      showToast('📷 Capturing Snapshot... [Shortcut S]');
-      takeSnapshot();
-    }
-  });
-}
-
-// Global window exposure for inline event handlers
-window.fetchNow = fetchNow;
-window.onIntervalChange = onIntervalChange;
-window.onExpiryChange = onExpiryChange;
-window.onThemeSelectChange = onThemeSelectChange;
-window.sortTable = sortTable;
-window.toggleGreeksView = toggleGreeksView;
-window.exportCSV = exportCSV;
-window.exportPDF = exportPDF;
-window.takeSnapshot = takeSnapshot;
-window.toggleExportMenu = toggleExportMenu;
-window.closeExportMenu = closeExportMenu;
-window.showToast = showToast;
-
-// Initialization
-document.addEventListener('DOMContentLoaded', () => {
-  initTheme();
-  setupKeyboardShortcuts();
-  fetchNow();
-  startAutoRefresh();
-});
 
 export function sortTable(col) {
   if (sortCol === col) sortDir *= -1;
@@ -1130,39 +1028,6 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// Keyboard Shortcuts Handler (R: Refresh, G: Greeks Toggle, S: Snapshot)
-export function setupKeyboardShortcuts() {
-  document.addEventListener('keydown', (e) => {
-    const activeEl = document.activeElement;
-    if (
-      activeEl &&
-      (activeEl.tagName === 'INPUT' ||
-        activeEl.tagName === 'SELECT' ||
-        activeEl.tagName === 'TEXTAREA' ||
-        activeEl.isContentEditable)
-    ) {
-      return;
-    }
-
-    const key = e.key ? e.key.toUpperCase() : '';
-
-    if (key === 'R') {
-      e.preventDefault();
-      fetchNow();
-    } else if (key === 'G') {
-      e.preventDefault();
-      const chk = document.getElementById('toggleGreeksBtn');
-      if (chk) {
-        chk.checked = !chk.checked;
-      }
-      toggleGreeksView();
-    } else if (key === 'S') {
-      e.preventDefault();
-      takeSnapshot();
-    }
-  });
-}
-
 // Global window exposure for inline event handlers
 window.fetchNow = fetchNow;
 window.onIntervalChange = onIntervalChange;
@@ -1179,7 +1044,6 @@ window.closeExportMenu = closeExportMenu;
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
-  setupKeyboardShortcuts();
   fetchNow();
   startAutoRefresh();
 });
