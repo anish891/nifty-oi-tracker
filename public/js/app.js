@@ -1069,7 +1069,6 @@ export function setupKeyboardShortcuts() {
     if (
       activeEl &&
       (activeEl.tagName === 'INPUT' ||
-        activeEl.tagName === 'SELECT' ||
         activeEl.tagName === 'TEXTAREA' ||
         activeEl.isContentEditable)
     ) {
@@ -1081,16 +1080,12 @@ export function setupKeyboardShortcuts() {
     if (key === 'R') {
       e.preventDefault();
       fetchNow();
-      showToast('⚡ Instant Data Refreshed (R)');
     } else if (key === 'G') {
       e.preventDefault();
       toggleGreeksView(!window.showGreeks);
-      const isVisible = window.showGreeks;
-      showToast(`📊 Greeks ${isVisible ? 'Shown' : 'Hidden'} (G)`);
     } else if (key === 'S') {
       e.preventDefault();
       takeSnapshot();
-      showToast('📷 Taking Dashboard Snapshot (S)');
     }
   });
 }
