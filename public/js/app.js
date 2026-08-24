@@ -261,21 +261,182 @@ export function renderAll() {
     }
   }
 
+  const spikeAlerts = calculateAndRenderRoC(d);
+
   const flowFeed = document.getElementById('flowAlertsFeed');
   if (flowFeed) {
-    if (d.unusualActivity && d.unusualActivity.length > 0) {
-      flowFeed.innerHTML = d.unusualActivity.map(a => `
-        <span style="background: rgba(245,158,11,0.15); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
-          ${a.intensity === 'CRITICAL' ? '⚡' : '🔥'} ${a.summary}
+    const combinedAlerts = [];
+
+    // Add 3m/5m institutional spike alerts first
+    spikeAlerts.forEach(s => {
+      const isBull = s.type === 'PUT_WRITING' || s.type === 'CALL_COVERING';
+      const color = isBull ? 'var(--bull)' : 'var(--bear)';
+      const bg = isBull ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+      const border = isBull ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+      combinedAlerts.push(`
+        <span style="background: ${bg}; color: ${color}; border: 1px solid ${border}; border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
+          ${s.summary}
         </span>
-      `).join('');
+      `);
+    });
+
+    if (d.unusualActivity && d.unusualActivity.length > 0) {
+      d.unusualActivity.forEach(a => {
+        combinedAlerts.push(`
+          <span style="background: rgba(245,158,11,0.15); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
+            ${a.intensity === 'CRITICAL' ? '⚡' : '🔥'} ${a.summary}
+          </span>
+        `);
+      });
+    }
+
+    if (combinedAlerts.length > 0) {
+      flowFeed.innerHTML = combinedAlerts.join('');
     } else {
-      flowFeed.innerHTML = '<span style="color: var(--muted);">No statistical volume/OI anomalies detected in recent ticks.</span>';
+      flowFeed.innerHTML = '<span style="color: var(--muted);">Scanning for 3m/5m OI velocity & volume anomalies...</span>';
     }
   }
 
   fetchSimilarSessions();
   renderTable();
+}
+
+// --- Rate of Change (RoC) & Institutional Velocity Engine ---
+const snapshotHistory = [];
+
+function recordSnapshot(d) {
+  if (!d) return;
+  const now = Date.now();
+  const strikesMap = {};
+  if (d.strikes && Array.isArray(d.strikes)) {
+    d.strikes.forEach(s => {
+      strikesMap[s.strike] = {
+        ceOI: s.CE?.openInterest || 0,
+        peOI: s.PE?.openInterest || 0
+      };
+    });
+  }
+
+  snapshotHistory.push({
+    timestamp: now,
+    pcr: d.pcr || 0,
+    totalCallOI: d.totalCallOI || 0,
+    totalPutOI: d.totalPutOI || 0,
+    strikes: strikesMap
+  });
+
+  // Maintain up to 7 minutes of rolling history (420,000 ms)
+  const cutoff = now - 420000;
+  while (snapshotHistory.length > 0 && snapshotHistory[0].timestamp < cutoff) {
+    snapshotHistory.shift();
+  }
+}
+
+function getSnapshotAgo(msAgo) {
+  if (snapshotHistory.length < 2) return null;
+  const now = Date.now();
+  const targetTime = now - msAgo;
+  let closest = snapshotHistory[0];
+  let minDiff = Math.abs(closest.timestamp - targetTime);
+
+  for (let i = 1; i < snapshotHistory.length; i++) {
+    const diff = Math.abs(snapshotHistory[i].timestamp - targetTime);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = snapshotHistory[i];
+    }
+  }
+
+  const historySpan = now - snapshotHistory[0].timestamp;
+  if (minDiff > 45000 && historySpan < msAgo - 30000) {
+    if (historySpan >= 15000) return snapshotHistory[0];
+    return null;
+  }
+  return closest;
+}
+
+function calculateAndRenderRoC(d) {
+  recordSnapshot(d);
+
+  const snap3m = getSnapshotAgo(180000);
+  const snap5m = getSnapshotAgo(300000);
+
+  const fmtDelta = (val, isPcr = false) => {
+    if (val === null || val === undefined) return '—';
+    if (isPcr) {
+      const sign = val > 0 ? '+' : '';
+      const color = val > 0.02 ? 'var(--bull)' : val < -0.02 ? 'var(--bear)' : 'var(--muted)';
+      return `<span style="color:${color}">${sign}${val.toFixed(2)}</span>`;
+    } else {
+      const sign = val > 0 ? '+' : '';
+      const color = val > 0 ? 'var(--bull)' : val < 0 ? 'var(--bear)' : 'var(--muted)';
+      return `<span style="color:${color}">${sign}${fmtK(val)}</span>`;
+    }
+  };
+
+  // PCR RoC
+  const pcr3m = snap3m ? d.pcr - snap3m.pcr : null;
+  const pcr5m = snap5m ? d.pcr - snap5m.pcr : null;
+  const pcrRocEl = document.getElementById('mPcrRoc');
+  if (pcrRocEl) {
+    pcrRocEl.innerHTML = `3m: ${fmtDelta(pcr3m, true)} | 5m: ${fmtDelta(pcr5m, true)}`;
+  }
+
+  // Call & Put OI RoC
+  const call3m = snap3m ? d.totalCallOI - snap3m.totalCallOI : null;
+  const call5m = snap5m ? d.totalCallOI - snap5m.totalCallOI : null;
+  const put3m = snap3m ? d.totalPutOI - snap3m.totalPutOI : null;
+  const put5m = snap5m ? d.totalPutOI - snap5m.totalPutOI : null;
+
+  const callRocEl = document.getElementById('mCallRoc');
+  if (callRocEl) {
+    callRocEl.innerHTML = `3m: ${fmtDelta(call3m)} | 5m: ${fmtDelta(call5m)}`;
+  }
+
+  const putRocEl = document.getElementById('mPutRoc');
+  if (putRocEl) {
+    putRocEl.innerHTML = `3m: ${fmtDelta(put3m)} | 5m: ${fmtDelta(put5m)}`;
+  }
+
+  // Institutional Spike Detection (3-min & 5-min strike velocity)
+  const spikeAlerts = [];
+  const compSnap = snap3m || snap5m;
+  if (compSnap && d.strikes && Array.isArray(d.strikes)) {
+    const timeLabel = snap3m ? '3m' : 'recent';
+    d.strikes.forEach(s => {
+      const prevStrike = compSnap.strikes[s.strike];
+      if (!prevStrike) return;
+
+      const ceDelta = (s.CE?.openInterest || 0) - prevStrike.ceOI;
+      const peDelta = (s.PE?.openInterest || 0) - prevStrike.peOI;
+
+      if (peDelta >= 25000) {
+        spikeAlerts.push({
+          type: 'PUT_WRITING',
+          summary: `⚡ Rapid Put Writing at ${s.strike}: +${fmtK(peDelta)} in ${timeLabel} (Bullish Support)`
+        });
+      } else if (peDelta <= -20000) {
+        spikeAlerts.push({
+          type: 'PUT_UNWINDING',
+          summary: `⚠️ Rapid Put Unwinding at ${s.strike}: ${fmtK(peDelta)} in ${timeLabel} (Support Break)`
+        });
+      }
+
+      if (ceDelta >= 25000) {
+        spikeAlerts.push({
+          type: 'CALL_WRITING',
+          summary: `⚡ Rapid Call Writing at ${s.strike}: +${fmtK(ceDelta)} in ${timeLabel} (Bearish Wall)`
+        });
+      } else if (ceDelta <= -20000) {
+        spikeAlerts.push({
+          type: 'CALL_COVERING',
+          summary: `🚀 Rapid Call Short Covering at ${s.strike}: ${fmtK(ceDelta)} in ${timeLabel} (Short Squeeze)`
+        });
+      }
+    });
+  }
+
+  return spikeAlerts;
 }
 
 export async function fetchSimilarSessions() {
@@ -638,28 +799,28 @@ export async function exportPDF() {
   if (btn) btn.textContent = '⏳ Generating PDF...';
 
   const generatePDF = async () => {
-    // Add print/pdf container styling temporarily to fit 2 landscape pages
-    document.body.classList.add('exporting-pdf');
+    const reportContainer = buildPdfReportElement(currentData);
+    document.body.appendChild(reportContainer);
+
     try {
-      const element = document.body;
       const opt = {
-        margin: [0.2, 0.2, 0.2, 0.2],
+        margin: [0.25, 0.25, 0.25, 0.25],
         filename: `Nifty_OI_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 1.5, useCORS: true, logging: false },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
         jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape', compress: true },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-        enableLinks: true
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
       if (window.html2pdf) {
-        // html2pdf automatically renders the exact DOM layout while preserving selectable searchable text overlay
-        await window.html2pdf().set(opt).from(element).save();
+        await window.html2pdf().set(opt).from(reportContainer).save();
       } else {
         throw new Error('PDF library failed to load');
       }
     } finally {
-      document.body.classList.remove('exporting-pdf');
+      if (document.body.contains(reportContainer)) {
+        document.body.removeChild(reportContainer);
+      }
     }
   };
 
@@ -691,6 +852,161 @@ export async function exportPDF() {
     alert('Failed to export PDF.');
     if (btn) btn.textContent = originalText;
   }
+}
+
+function buildPdfReportElement(d) {
+  const container = document.createElement('div');
+  container.className = 'pdf-export-report';
+  container.style.cssText = `
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    background: #ffffff;
+    padding: 24px 32px;
+    width: 1020px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    position: absolute;
+    left: -9999px;
+    top: 0;
+  `;
+
+  const dateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  const cr = d.compositeRegime || {};
+  const sd = d.straddleDetails || {};
+  const gex = d.gex || {};
+
+  container.innerHTML = `
+    <!-- Header Banner -->
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 16px;">
+      <div>
+        <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em;">
+          Nifty <span style="color: #2563eb;">OI</span> Analytics Report
+        </h1>
+        <div style="font-size: 11px; color: #64748b; margin-top: 3px;">
+          Generated: <strong>${dateStr} IST</strong> | Expiry: <strong>${d.expiry || '—'}</strong>
+        </div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 18px; font-weight: 800; color: #2563eb;">Spot: ${fmt(d.spot)}</div>
+        <div style="font-size: 11px; color: #64748b;">ATM Strike: ${fmt(d.atm)}</div>
+      </div>
+    </div>
+
+    <!-- Executive Summary Grid -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;">
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
+        <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Market Regime</div>
+        <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 2px;">${cr.regimeLabel || '—'}</div>
+        <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Bias: <strong style="color: #2563eb;">${(cr.tacticalBias || '—').replace('_', ' ')}</strong></div>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
+        <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">PCR & Sentiment</div>
+        <div style="font-size: 16px; font-weight: 800; color: ${d.pcr > 1.2 ? '#059669' : d.pcr < 0.8 ? '#dc2626' : '#d97706'}; margin-top: 2px;">
+          ${d.pcr ? d.pcr.toFixed(2) : '—'} <span style="font-size: 11px; font-weight: 600;">(${d.pcr > 1.2 ? 'Bullish' : d.pcr < 0.8 ? 'Bearish' : 'Neutral'})</span>
+        </div>
+        <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Near ATM: ${d.ntmPcr ? d.ntmPcr.toFixed(2) : '—'} | Wtd: ${d.weightedPcr ? d.weightedPcr.toFixed(2) : '—'}</div>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
+        <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Max Pain & Key Levels</div>
+        <div style="font-size: 16px; font-weight: 800; color: #d97706; margin-top: 2px;">${fmt(d.maxPain)}</div>
+        <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Res: <strong style="color:#dc2626;">${fmt(d.maxCallOIStrike)}</strong> | Sup: <strong style="color:#059669;">${fmt(d.maxPutOIStrike)}</strong></div>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
+        <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Expected Day Range</div>
+        <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 2px;">
+          ${d.lowerRange ? fmt(Math.round(d.lowerRange)) : '—'} - ${d.upperRange ? fmt(Math.round(d.upperRange)) : '—'}
+        </div>
+        <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Straddle: ₹${sd.straddlePrice ? sd.straddlePrice.toFixed(1) : '—'} (±${sd.expectedMove ? sd.expectedMove.toFixed(1) : '—'} pts)</div>
+      </div>
+    </div>
+
+    <!-- Technical Levels Summary Table -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px;">
+        <div style="font-size: 11px; font-weight: 700; color: #2563eb; margin-bottom: 6px; text-transform: uppercase;">Central Pivot Range (CPR)</div>
+        <div style="font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+          <div>Pivot (P): <strong>${d.cpr ? fmt(d.cpr.pivot) : '—'}</strong></div>
+          <div>CPR Type: <strong>${d.cpr ? d.cpr.type : '—'}</strong></div>
+          <div>TC: <strong>${d.cpr ? fmt(d.cpr.tc) : '—'}</strong></div>
+          <div>BC: <strong>${d.cpr ? fmt(d.cpr.bc) : '—'}</strong></div>
+          <div>R1: <strong style="color:#dc2626;">${d.cpr ? fmt(d.cpr.r1) : '—'}</strong></div>
+          <div>S1: <strong style="color:#059669;">${d.cpr ? fmt(d.cpr.s1) : '—'}</strong></div>
+        </div>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px;">
+        <div style="font-size: 11px; font-weight: 700; color: #2563eb; margin-bottom: 6px; text-transform: uppercase;">Gamma Exposure (GEX)</div>
+        <div style="font-size: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+          <div>Net GEX: <strong>${gex.netGexCr !== undefined ? gex.netGexCr + ' Cr' : '—'}</strong></div>
+          <div>Regime: <strong>${gex.gexRegime || '—'}</strong></div>
+          <div>Zero-Gamma: <strong style="color:#d97706;">${gex.zeroGammaLevel ? fmt(gex.zeroGammaLevel) : '—'}</strong></div>
+          <div>Flip Dist: <strong>${gex.distToZeroGamma !== undefined ? gex.distToZeroGamma + ' pts' : '—'}</strong></div>
+          <div>Call GEX: <strong style="color:#dc2626;">${gex.callGexCr !== undefined ? gex.callGexCr + ' Cr' : '—'}</strong></div>
+          <div>Put GEX: <strong style="color:#059669;">${gex.putGexCr !== undefined ? gex.putGexCr + ' Cr' : '—'}</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Option Chain Data Table -->
+    <div style="margin-top: 14px;">
+      <div style="font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">
+        Option Chain Overview (ATM ± 10 Strikes)
+      </div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 10px; text-align: right;">
+        <thead>
+          <tr style="background: #0f172a; color: #ffffff;">
+            <th colspan="4" style="padding: 6px; text-align: center; border: 1px solid #334155;">CALLS</th>
+            <th style="padding: 6px; text-align: center; background: #2563eb; border: 1px solid #334155;">STRIKE</th>
+            <th colspan="4" style="padding: 6px; text-align: center; border: 1px solid #334155;">PUTS</th>
+          </tr>
+          <tr style="background: #1e293b; color: #f8fafc;">
+            <th style="padding: 5px; border: 1px solid #334155;">Chg OI</th>
+            <th style="padding: 5px; border: 1px solid #334155;">OI</th>
+            <th style="padding: 5px; border: 1px solid #334155;">IV%</th>
+            <th style="padding: 5px; border: 1px solid #334155;">LTP</th>
+            <th style="padding: 5px; text-align: center; border: 1px solid #334155;">Strike</th>
+            <th style="padding: 5px; border: 1px solid #334155;">LTP</th>
+            <th style="padding: 5px; border: 1px solid #334155;">IV%</th>
+            <th style="padding: 5px; border: 1px solid #334155;">OI</th>
+            <th style="padding: 5px; border: 1px solid #334155;">Chg OI</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(d.strikes || []).map(s => {
+            const isAtm = s.strike === d.atm;
+            const bg = isAtm ? '#dbeafe' : '#ffffff';
+            const fontWeight = isAtm ? '700' : '400';
+            const ceChg = s.CE?.changeinOpenInterest || 0;
+            const peChg = s.PE?.changeinOpenInterest || 0;
+
+            return `
+              <tr style="background: ${bg}; font-weight: ${fontWeight}; border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 4px 6px; color: ${ceChg >= 0 ? '#059669' : '#dc2626'};">${fmtChg(ceChg)}</td>
+                <td style="padding: 4px 6px;">${fmtK(s.CE?.openInterest || 0)}</td>
+                <td style="padding: 4px 6px;">${(s.CE?.impliedVolatility || 0).toFixed(1)}%</td>
+                <td style="padding: 4px 6px;">₹${(s.CE?.lastPrice || 0).toFixed(2)}</td>
+                <td style="padding: 4px 6px; text-align: center; background: ${isAtm ? '#bfdbfe' : '#f1f5f9'}; font-weight: 700;">${s.strike}</td>
+                <td style="padding: 4px 6px;">₹${(s.PE?.lastPrice || 0).toFixed(2)}</td>
+                <td style="padding: 4px 6px;">${(s.PE?.impliedVolatility || 0).toFixed(1)}%</td>
+                <td style="padding: 4px 6px;">${fmtK(s.PE?.openInterest || 0)}</td>
+                <td style="padding: 4px 6px; color: ${peChg >= 0 ? '#059669' : '#dc2626'};">${fmtChg(peChg)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Footer Disclaimer -->
+    <div style="margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 8px; font-size: 9px; color: #94a3b8; text-align: center;">
+      Report generated automatically by Nifty OI Tracker. Data sourced from NSE India. For analytical purposes only.
+    </div>
+  `;
+
+  return container;
 }
 
 // Dropdown Menu Handlers

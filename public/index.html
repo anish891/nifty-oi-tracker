@@ -217,15 +217,16 @@
             <span class="sub" id="mIvSkewSub">—</span>
           </div>
         </div>
-        <div class="metric-sub-stats">
-          Near ATM: <span id="mNtmPcr">—</span> | Wtd: <span id="mWeightedPcr">—</span>
+        <div class="metric-sub-stats" style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+          <span>Near: <strong id="mNtmPcr">—</strong> | Wtd: <strong id="mWeightedPcr">—</strong></span>
+          <span title="PCR Rate of Change (3m & 5m windows)">PCR RoC: <span id="mPcrRoc" style="font-weight: 600;">3m: — | 5m: —</span></span>
         </div>
       </div>
     </div>
 
     <!-- CARD 3: OPEN INTEREST -->
     <div class="dashboard-card">
-      <div class="card-header">Open Interest</div>
+      <div class="card-header">Open Interest & Velocity</div>
       <div class="card-body">
         <div class="metric-row">
           <div class="metric-item">
@@ -238,6 +239,10 @@
             <span class="val bull" id="mPutOI">—</span>
             <span class="sub" id="mPutChg">—</span>
           </div>
+        </div>
+        <div class="metric-sub-stats" style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
+          <span title="Call OI Velocity (3-min & 5-min RoC)">CE RoC: <span id="mCallRoc" style="font-weight: 600;">3m: — | 5m: —</span></span>
+          <span title="Put OI Velocity (3-min & 5-min RoC)">PE RoC: <span id="mPutRoc" style="font-weight: 600;">3m: — | 5m: —</span></span>
         </div>
       </div>
     </div>
