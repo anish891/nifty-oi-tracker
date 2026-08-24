@@ -618,9 +618,19 @@ export function getSortVal(row, col) {
   return map[col] !== undefined ? map[col] : row.strike;
 }
 
-export function toggleGreeksView() {
+export function toggleGreeksView(forceState) {
   const chk = document.getElementById('toggleGreeksBtn');
-  window.showGreeks = chk ? chk.checked : false;
+  if (typeof forceState === 'boolean') {
+    window.showGreeks = forceState;
+  } else if (chk) {
+    window.showGreeks = chk.checked;
+  } else {
+    window.showGreeks = !window.showGreeks;
+  }
+
+  if (chk) {
+    chk.checked = window.showGreeks;
+  }
 
   const callColspan = document.getElementById('callHeaderColspan');
   const putColspan = document.getElementById('putHeaderColspan');
@@ -976,13 +986,13 @@ function buildPdfReportElement(d) {
         </thead>
         <tbody>
           ${(d.strikes || []).map(s => {
-            const isAtm = s.strike === d.atm;
-            const bg = isAtm ? '#dbeafe' : '#ffffff';
-            const fontWeight = isAtm ? '700' : '400';
-            const ceChg = s.CE?.changeinOpenInterest || 0;
-            const peChg = s.PE?.changeinOpenInterest || 0;
+    const isAtm = s.strike === d.atm;
+    const bg = isAtm ? '#dbeafe' : '#ffffff';
+    const fontWeight = isAtm ? '700' : '400';
+    const ceChg = s.CE?.changeinOpenInterest || 0;
+    const peChg = s.PE?.changeinOpenInterest || 0;
 
-            return `
+    return `
               <tr style="background: ${bg}; font-weight: ${fontWeight}; border-bottom: 1px solid #e2e8f0;">
                 <td style="padding: 4px 6px; color: ${ceChg >= 0 ? '#059669' : '#dc2626'};">${fmtChg(ceChg)}</td>
                 <td style="padding: 4px 6px;">${fmtK(s.CE?.openInterest || 0)}</td>
@@ -995,7 +1005,7 @@ function buildPdfReportElement(d) {
                 <td style="padding: 4px 6px; color: ${peChg >= 0 ? '#059669' : '#dc2626'};">${fmtChg(peChg)}</td>
               </tr>
             `;
-          }).join('')}
+  }).join('')}
         </tbody>
       </table>
     </div>
@@ -1028,6 +1038,63 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// Toast Notification Helper
+export function showToast(msg) {
+  let toastContainer = document.getElementById('toastContainer');
+  if (!toastContainer) {
+    toastContainer = document.createElement('div');
+    toastContainer.id = 'toastContainer';
+    toastContainer.style.cssText = 'position:fixed; bottom:20px; right:20px; z-index:9999; display:flex; flex-direction:column; gap:8px; pointer-events:none;';
+    document.body.appendChild(toastContainer);
+  }
+  const toast = document.createElement('div');
+  toast.style.cssText = 'background:var(--surface); color:var(--accent); border:1px solid var(--accent); border-radius:6px; padding:8px 14px; font-size:12px; font-weight:600; box-shadow:0 4px 12px rgba(0,0,0,0.3); transition:all 0.3s ease; opacity:0; transform:translateY(10px);';
+  toast.textContent = msg;
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+// Keyboard Shortcuts Handler (R: Refresh, G: Greeks Toggle, S: Snapshot)
+export function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    const activeEl = document.activeElement;
+    if (
+      activeEl &&
+      (activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.isContentEditable)
+    ) {
+      return;
+    }
+
+    const key = e.key ? e.key.toUpperCase() : '';
+
+    if (key === 'R') {
+      e.preventDefault();
+      fetchNow();
+      showToast('⚡ Instant Data Refreshed (R)');
+    } else if (key === 'G') {
+      e.preventDefault();
+      toggleGreeksView(!window.showGreeks);
+      const isVisible = window.showGreeks;
+      showToast(`📊 Greeks ${isVisible ? 'Shown' : 'Hidden'} (G)`);
+    } else if (key === 'S') {
+      e.preventDefault();
+      takeSnapshot();
+      showToast('📷 Taking Dashboard Snapshot (S)');
+    }
+  });
+}
+
 // Global window exposure for inline event handlers
 window.fetchNow = fetchNow;
 window.onIntervalChange = onIntervalChange;
@@ -1040,10 +1107,12 @@ window.exportPDF = exportPDF;
 window.takeSnapshot = takeSnapshot;
 window.toggleExportMenu = toggleExportMenu;
 window.closeExportMenu = closeExportMenu;
+window.showToast = showToast;
 
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  setupKeyboardShortcuts();
   fetchNow();
   startAutoRefresh();
 });
