@@ -835,3 +835,8 @@ body.exporting-pdf .footer {
 .hidden-greeks {
   display: none !important;
 }
+
+.setup-bullet-card:hover {
+  border-color: var(--accent) !important;
+  transform: translateY(-1px);
+}

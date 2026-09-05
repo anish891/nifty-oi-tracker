@@ -261,6 +261,8 @@ export function renderAll() {
     }
   }
 
+  renderTradeSetup(d);
+
   const spikeAlerts = calculateAndRenderRoC(d);
 
   const flowFeed = document.getElementById('flowAlertsFeed');
@@ -1029,6 +1031,118 @@ document.addEventListener('click', (e) => {
     dd.classList.remove('active');
   }
 });
+
+export function renderTradeSetup(d) {
+  if (!d) return;
+
+  const todayBiasEl = document.getElementById('setupTodayBias');
+  const keyTargetEl = document.getElementById('setupKeyTarget');
+  const invalidationEl = document.getElementById('setupInvalidation');
+  const optimalStrategyEl = document.getElementById('setupOptimalStrategy');
+  const biasBadgeEl = document.getElementById('setupBiasBadge');
+
+  if (!todayBiasEl || !keyTargetEl || !invalidationEl || !optimalStrategyEl) return;
+
+  const spot = d.spot || 0;
+  const pivot = d.cpr ? d.cpr.pivot : d.atm;
+  const tc = d.cpr ? d.cpr.tc : pivot + 10;
+  const bc = d.cpr ? d.cpr.bc : pivot - 10;
+  const r1 = d.cpr ? d.cpr.r1 : pivot + 50;
+  const s1 = d.cpr ? d.cpr.s1 : pivot - 50;
+  const zeroGamma = d.gex ? d.gex.zeroGammaLevel : (bc || pivot - 30);
+  const maxCall = d.maxCallOIStrike || (d.atm + 100);
+  const maxPut = d.maxPutOIStrike || (d.atm - 100);
+  const pcr = d.pcr || 1.0;
+  const isPosGamma = d.gex ? (d.gex.totalGexCr >= 0) : true;
+  const sd = d.straddleDetails || {};
+
+  // Evaluate Directional Bias
+  let isBullish = spot >= pivot || pcr > 1.05;
+  let isBearish = spot < pivot || pcr < 0.95;
+  if (spot > tc && pcr > 1.1) {
+    isBullish = true;
+    isBearish = false;
+  } else if (spot < bc && pcr < 0.9) {
+    isBearish = true;
+    isBullish = false;
+  }
+
+  let biasText = '';
+  let biasBadgeText = '';
+  let biasColor = 'var(--warn)';
+  let biasBg = 'rgba(245,158,11,0.15)';
+
+  if (isBullish) {
+    biasText = `Bullish above ${fmt(Math.round(pivot))} (CPR Pivot)`;
+    biasBadgeText = 'Bias: Bullish 📈';
+    biasColor = 'var(--bull)';
+    biasBg = 'rgba(16,185,129,0.15)';
+  } else if (isBearish) {
+    biasText = `Bearish below ${fmt(Math.round(pivot))} (CPR Pivot)`;
+    biasBadgeText = 'Bias: Bearish 📉';
+    biasColor = 'var(--bear)';
+    biasBg = 'rgba(239,68,68,0.15)';
+  } else {
+    biasText = `Neutral / Rangebound around ${fmt(Math.round(pivot))} (CPR Pivot)`;
+    biasBadgeText = 'Bias: Neutral ⚖️';
+    biasColor = 'var(--warn)';
+    biasBg = 'rgba(245,158,11,0.15)';
+  }
+
+  // Key Target
+  let targetText = '';
+  if (isBullish) {
+    targetText = `${fmt(maxCall)} (Max Call Wall / Resistance)`;
+  } else if (isBearish) {
+    targetText = `${fmt(maxPut)} (Max Put Wall / Support)`;
+  } else {
+    targetText = `${fmt(maxCall)} Res / ${fmt(maxPut)} Sup`;
+  }
+
+  // Invalidation Level
+  let invalidationText = '';
+  if (zeroGamma && Math.abs(spot - zeroGamma) > 5) {
+    invalidationText = `${fmt(zeroGamma)} (Zero-Gamma Flip Level)`;
+  } else {
+    invalidationText = isBullish
+      ? `${fmt(Math.round(s1))} (S1 Support Level)`
+      : `${fmt(Math.round(r1))} (R1 Resistance Level)`;
+  }
+
+  // Optimal Strategy
+  let strategyText = '';
+  if (isBullish) {
+    if (isPosGamma) {
+      strategyText = `Bull Put Spread / Buying dips near S1 Pivot (${fmt(Math.round(s1))})`;
+    } else {
+      strategyText = `Long Call / Bull Call Spread above ${fmt(Math.round(pivot))}`;
+    }
+  } else if (isBearish) {
+    if (isPosGamma) {
+      strategyText = `Bear Call Spread / Shorting rallies near R1 (${fmt(Math.round(r1))})`;
+    } else {
+      strategyText = `Long Put / Bear Put Spread below ${fmt(Math.round(pivot))}`;
+    }
+  } else {
+    if (sd.lowerRange && sd.upperRange) {
+      strategyText = `Iron Condor / Selling ATM Straddle (Range: ${fmt(Math.round(sd.lowerRange))} - ${fmt(Math.round(sd.upperRange))})`;
+    } else {
+      strategyText = `Iron Condor / Range Trade between ${fmt(maxPut)} & ${fmt(maxCall)}`;
+    }
+  }
+
+  // Update DOM
+  todayBiasEl.textContent = biasText;
+  keyTargetEl.textContent = targetText;
+  invalidationEl.textContent = invalidationText;
+  optimalStrategyEl.textContent = strategyText;
+
+  if (biasBadgeEl) {
+    biasBadgeEl.textContent = biasBadgeText;
+    biasBadgeEl.style.background = biasBg;
+    biasBadgeEl.style.color = biasColor;
+  }
+}
 
 // Global window exposure for inline event handlers
 window.fetchNow = fetchNow;
