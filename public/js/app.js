@@ -1,5 +1,5 @@
 import { fetchOptionChainData, fetchSimilarSessionsData } from './api-client.js';
-import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup } from './charts.js';
+import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityChart } from './charts.js';
 
 let currentData = null;
 let prevData = null;
@@ -260,6 +260,24 @@ export function renderAll() {
       );
     }
   }
+
+  if (d.impliedProbability) {
+    const ip = d.impliedProbability;
+    const modeEl = document.getElementById('pdfModeStrike');
+    if (modeEl) modeEl.textContent = fmt(ip.modeStrike);
+
+    const range68El = document.getElementById('pdf68Range');
+    if (range68El) range68El.textContent = `${fmt(ip.confidence68.lower)} - ${fmt(ip.confidence68.upper)}`;
+
+    const range95El = document.getElementById('pdf95Range');
+    if (range95El) range95El.textContent = `${fmt(ip.confidence95.lower)} - ${fmt(ip.confidence95.upper)}`;
+
+    const stayEl = document.getElementById('pdfStayProbability');
+    if (stayEl) stayEl.textContent = `${ip.stayProbabilityPct}%`;
+
+    renderProbabilityChart('pdfChartCanvas', ip, d.spot);
+  }
+
 
   renderTradeSetup(d);
 

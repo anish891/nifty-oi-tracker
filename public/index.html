@@ -10,6 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap"
     rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -240,6 +241,56 @@
       </div>
     </div>
   </div>
+
+  <!-- MARKET-IMPLIED EXPIRY PROBABILITY (BREEDEN-LITZENBERGER MODEL) -->
+  <div id="impliedProbabilitySection" style="padding: 12px 20px 0 20px;">
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+            📊 Market-Implied Expiry Probability (Breeden-Litzenberger PDF)
+          </span>
+          <span style="background: rgba(139,92,246,0.15); color: #a78bfa; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+            QUANT / ML MODEL
+          </span>
+        </div>
+        <span style="font-size: 10px; color: var(--muted);">Derived from 2nd numerical derivative of call price surface: ∂²C / ∂K²</span>
+      </div>
+
+      <!-- Probability Summary Metrics Grid -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px;">
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Most Likely Expiry</div>
+          <div id="pdfModeStrike" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">—</div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Peak Implied Density (Mode)</div>
+        </div>
+
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">68% Confidence Range</div>
+          <div id="pdf68Range" style="font-size: 15px; font-weight: 700; color: var(--bull); margin-top: 2px;">—</div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">1-Sigma Expected Expiry Zone</div>
+        </div>
+
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">95% Confidence Range</div>
+          <div id="pdf95Range" style="font-size: 15px; font-weight: 700; color: var(--warn); margin-top: 2px;">—</div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">2-Sigma Tail Risk Zone</div>
+        </div>
+
+        <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">ATM ±1.5% Stay Probability</div>
+          <div id="pdfStayProbability" style="font-size: 18px; font-weight: 700; color: #a78bfa; margin-top: 2px;">—%</div>
+          <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Rangebound Holding Chance</div>
+        </div>
+      </div>
+
+      <!-- Canvas Chart Container -->
+      <div style="position: relative; height: 220px; width: 100%; background: var(--bg); padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
+        <canvas id="pdfChartCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+
 
   <!-- Metrics Dashboard -->
   <div class="metrics-dashboard" id="metricsRow">

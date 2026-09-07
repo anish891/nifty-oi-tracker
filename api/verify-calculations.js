@@ -121,7 +121,7 @@ function calculateCPR(H, L, C) {
   return { pivot, tc, bc, width };
 }
 
-const { calculateOptionGreeks } = require('./services/analytics');
+const { calculateOptionGreeks, computeImpliedProbabilityDistribution } = require('./services/analytics');
 
 const cprRes = calculateCPR(24100, 23900, 24000);
 assert.strictEqual(cprRes.pivot, 24000);
@@ -157,4 +157,27 @@ assert.strictEqual(expectedLower, 23813);
 
 console.log('✓ Test 5 Passed: ATM Straddle Price & 0.85x Intraday Expected Move formula verified successfully.');
 
+// ── TEST 6: BREEDEN-LITZENBERGER IMPLIED PROBABILITY DISTRIBUTION ──
+const mockStrikesForPDF = [
+  { strike: 23600, CE: { lastPrice: 420, impliedVolatility: 15 } },
+  { strike: 23700, CE: { lastPrice: 330, impliedVolatility: 15 } },
+  { strike: 23800, CE: { lastPrice: 245, impliedVolatility: 15 } },
+  { strike: 23900, CE: { lastPrice: 170, impliedVolatility: 15 } },
+  { strike: 24000, CE: { lastPrice: 105, impliedVolatility: 15 } },
+  { strike: 24100, CE: { lastPrice: 55, impliedVolatility: 15 } },
+  { strike: 24200, CE: { lastPrice: 25, impliedVolatility: 15 } },
+  { strike: 24300, CE: { lastPrice: 10, impliedVolatility: 15 } },
+  { strike: 24400, CE: { lastPrice: 3, impliedVolatility: 15 } },
+];
+
+const pdfResult = computeImpliedProbabilityDistribution(mockStrikesForPDF, 24000, 7 / 365);
+const totalProbSum = pdfResult.distribution.reduce((acc, d) => acc + d.probabilityPct, 0);
+
+assert(totalProbSum >= 99.0 && totalProbSum <= 101.0, `Sum of probabilities (${totalProbSum}%) should be ~100%`);
+assert(pdfResult.confidence68.lower <= 24000 && pdfResult.confidence68.upper >= 24000, 'Spot 24000 should lie within 68% confidence interval');
+assert(pdfResult.stayProbabilityPct > 0 && pdfResult.stayProbabilityPct <= 100, 'Stay probability should be valid percentage');
+
+console.log('✓ Test 6 Passed: Breeden-Litzenberger Implied Probability Model & Distribution calculation verified successfully.');
+
 console.log('\n✅ ALL MATHEMATICAL VERIFICATION TESTS PASSED SUCCESSFULLY!\n');
+

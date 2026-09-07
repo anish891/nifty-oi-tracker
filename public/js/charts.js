@@ -66,3 +66,93 @@ export function getSmoothedBuildup(strike, currentOI, currentPrice, isCall) {
 
   return buildupSingle(oiTrend, priceTrend, isCall);
 }
+
+let pdfChartInstance = null;
+
+export function renderProbabilityChart(canvasId, pdfData, spotPrice) {
+  if (!window.Chart) return;
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  if (!pdfData || !pdfData.distribution || pdfData.distribution.length === 0) return;
+
+  const labels = pdfData.distribution.map(d => d.strike);
+  const data = pdfData.distribution.map(d => d.probabilityPct);
+
+  const conf68Lower = pdfData.confidence68?.lower || spotPrice * 0.99;
+  const conf68Upper = pdfData.confidence68?.upper || spotPrice * 1.01;
+
+  const pointBackgroundColors = labels.map(strike => {
+    if (strike === pdfData.modeStrike) return '#3b82f6';
+    if (strike >= conf68Lower && strike <= conf68Upper) return 'rgba(16, 185, 129, 0.9)';
+    return 'rgba(167, 139, 250, 0.5)';
+  });
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+  gradient.addColorStop(0, 'rgba(139, 92, 246, 0.35)');
+  gradient.addColorStop(1, 'rgba(139, 92, 246, 0.0)');
+
+  if (pdfChartInstance) {
+    pdfChartInstance.data.labels = labels;
+    pdfChartInstance.data.datasets[0].data = data;
+    pdfChartInstance.data.datasets[0].pointBackgroundColor = pointBackgroundColors;
+    pdfChartInstance.data.datasets[0].pointRadius = labels.map(s => s === pdfData.modeStrike ? 6 : 3);
+    pdfChartInstance.update('none');
+    return;
+  }
+
+  pdfChartInstance = new window.Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Implied Density (%)',
+          data: data,
+          borderColor: '#8b5cf6',
+          borderWidth: 2.5,
+          backgroundColor: gradient,
+          fill: true,
+          tension: 0.35,
+          pointRadius: labels.map(s => s === pdfData.modeStrike ? 6 : 3),
+          pointBackgroundColor: pointBackgroundColors,
+          pointHoverRadius: 7
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            label: (ctx) => `Probability: ${ctx.parsed.y}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+          ticks: { color: '#94a3b8', font: { size: 10 } },
+          title: { display: true, text: 'Nifty Strike Price', color: '#64748b', font: { size: 10 } }
+        },
+        y: {
+          grid: { color: 'rgba(255, 255, 255, 0.05)' },
+          ticks: {
+            color: '#94a3b8',
+            font: { size: 10 },
+            callback: (val) => `${val}%`
+          },
+          title: { display: true, text: 'Implied Probability (%)', color: '#64748b', font: { size: 10 } },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+

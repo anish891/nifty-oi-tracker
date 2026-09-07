@@ -601,6 +601,7 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const cprTypeVal = cprWidthPct < 0.25 ? 'NARROW' : cprWidthPct > 0.6 ? 'WIDE' : 'AVERAGE';
   const gexRegimeVal = totalGexCr >= 0 ? 'POSITIVE_GAMMA' : 'NEGATIVE_GAMMA';
   const compositeRegime = computeCompositeRegime(gexRegimeVal, pcr, cprTypeVal, ivSkew, spot, maxPain);
+  const impliedProbability = computeImpliedProbabilityDistribution(allExpiryStrikes, spot, T);
 
   const result = {
     spot,
@@ -634,6 +635,7 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
     atmIv: Number(atmIv.toFixed(2)),
     volatilityRegime,
     compositeRegime,
+    impliedProbability,
     unusualActivity: unusualFlowAlerts,
     maxPain,
     gex: {
@@ -676,6 +678,131 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   return result;
 }
 
+function computeImpliedProbabilityDistribution(allStrikes, spot, T, r = 0.065) {
+  if (!allStrikes || allStrikes.length < 3) {
+    return {
+      modeStrike: spot,
+      confidence68: { lower: Math.round(spot * 0.99), upper: Math.round(spot * 1.01) },
+      confidence95: { lower: Math.round(spot * 0.98), upper: Math.round(spot * 1.02) },
+      stayProbabilityPct: 68.0,
+      distribution: []
+    };
+  }
+
+  const sorted = [...allStrikes].sort((a, b) => a.strike - b.strike);
+  const n = sorted.length;
+
+  const prices = sorted.map(s => {
+    const ltp = s.CE?.lastPrice || 0;
+    const iv = (s.CE?.impliedVolatility || 0) / 100;
+    if (ltp > 0) return ltp;
+    if (iv > 0 && T > 0) {
+      const K = s.strike;
+      const d1 = (Math.log(spot / K) + (r + 0.5 * iv * iv) * T) / (iv * Math.sqrt(T));
+      const d2 = d1 - iv * Math.sqrt(T);
+      return spot * normalCdf(d1) - K * Math.exp(-r * T) * normalCdf(d2);
+    }
+    return 0;
+  });
+
+  const smoothedPrices = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const prev = prices[Math.max(0, i - 1)];
+    const curr = prices[i];
+    const next = prices[Math.min(n - 1, i + 1)];
+    smoothedPrices[i] = (prev + 2 * curr + next) / 4;
+  }
+
+  const rawProb = new Float64Array(n);
+  const discFactor = Math.exp(r * T);
+
+  for (let i = 1; i < n - 1; i++) {
+    const K_prev = sorted[i - 1].strike;
+    const K_curr = sorted[i].strike;
+    const K_next = sorted[i + 1].strike;
+
+    const dK1 = K_curr - K_prev;
+    const dK2 = K_next - K_curr;
+    const avgdK = (dK1 + dK2) / 2;
+
+    if (dK1 <= 0 || dK2 <= 0) continue;
+
+    const dC_dK2 = (smoothedPrices[i + 1] - smoothedPrices[i]) / dK2;
+    const dC_dK1 = (smoothedPrices[i] - smoothedPrices[i - 1]) / dK1;
+    const secondDeriv = (dC_dK2 - dC_dK1) / avgdK;
+
+    const density = Math.max(0, discFactor * secondDeriv * avgdK);
+    rawProb[i] = density;
+  }
+
+  const smoothProb = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const p1 = rawProb[Math.max(0, i - 1)];
+    const p2 = rawProb[i];
+    const p3 = rawProb[Math.min(n - 1, i + 1)];
+    smoothProb[i] = p1 * 0.2 + p2 * 0.6 + p3 * 0.2;
+  }
+
+  let sumProb = 0;
+  for (let i = 0; i < n; i++) sumProb += smoothProb[i];
+
+  if (sumProb === 0) {
+    for (let i = 0; i < n; i++) {
+      const z = (sorted[i].strike - spot) / (spot * 0.015);
+      smoothProb[i] = normalPdf(z);
+      sumProb += smoothProb[i];
+    }
+  }
+
+  const distribution = [];
+  let maxProb = -1;
+  let modeStrike = spot;
+  let runningCdf = 0;
+
+  let k16 = sorted[0].strike;
+  let k84 = sorted[n - 1].strike;
+  let k2_5 = sorted[0].strike;
+  let k97_5 = sorted[n - 1].strike;
+
+  let stayProbSum = 0;
+  const lowerRangeBound = spot * 0.985;
+  const upperRangeBound = spot * 1.015;
+
+  for (let i = 0; i < n; i++) {
+    const probPct = Number(((smoothProb[i] / sumProb) * 100).toFixed(2));
+    runningCdf += probPct / 100;
+    const K = sorted[i].strike;
+
+    if (probPct > maxProb) {
+      maxProb = probPct;
+      modeStrike = K;
+    }
+
+    if (runningCdf >= 0.025 && k2_5 === sorted[0].strike) k2_5 = K;
+    if (runningCdf >= 0.16 && k16 === sorted[0].strike) k16 = K;
+    if (runningCdf >= 0.84 && k84 === sorted[n - 1].strike) k84 = K;
+    if (runningCdf >= 0.975 && k97_5 === sorted[n - 1].strike) k97_5 = K;
+
+    if (K >= lowerRangeBound && K <= upperRangeBound) {
+      stayProbSum += probPct;
+    }
+
+    distribution.push({
+      strike: K,
+      probabilityPct: probPct,
+      cdfPct: Number((runningCdf * 100).toFixed(1))
+    });
+  }
+
+  return {
+    modeStrike,
+    confidence68: { lower: k16, upper: k84 },
+    confidence95: { lower: k2_5, upper: k97_5 },
+    stayProbabilityPct: Number(Math.min(99.9, stayProbSum).toFixed(1)),
+    distribution
+  };
+}
+
 function getCacheData() {
   return cache.data;
 }
@@ -691,6 +818,8 @@ module.exports = {
   computeCosineSimilarity,
   extractFeatureVector,
   computeVolatilityRegime,
+  computeImpliedProbabilityDistribution,
   processOptionChainData,
   getCacheData
 };
+
