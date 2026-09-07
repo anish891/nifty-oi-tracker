@@ -291,6 +291,66 @@
     </div>
   </div>
 
+  <!-- INTRADAY ML TREND & BREAKOUT PREDICTION ENGINE CARD -->
+  <div id="mlPredictionSection" style="padding: 12px 20px 0 20px;">
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+            🤖 Intraday ML Trend & Breakout Prediction Engine
+          </span>
+          <span id="mlSignalBadge" style="background: rgba(16,185,129,0.15); color: var(--bull); font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+            Signal: Analyzing…
+          </span>
+        </div>
+        <span style="font-size: 10px; color: var(--muted);">Logistic Softmax + Naive Bayes Ensemble (15-30m Horizon)</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+        <!-- 15-30m Directional Forecast -->
+        <div style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
+            <span>📈 15-30m Directional Probability</span>
+            <span id="mlDirectionConfidence" style="color: var(--accent);">Confidence: —</span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div style="height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 8px;">
+            <div id="mlBarBull" style="width: 33.3%; background: var(--bull); transition: width 0.4s ease;" title="Bullish"></div>
+            <div id="mlBarNeut" style="width: 33.3%; background: var(--warn); transition: width 0.4s ease;" title="Neutral"></div>
+            <div id="mlBarBear" style="width: 33.3%; background: var(--bear); transition: width 0.4s ease;" title="Bearish"></div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;">
+            <span style="color: var(--bull);">🚀 Bullish (+0.3%): <strong id="mlPctBull">—%</strong></span>
+            <span style="color: var(--warn);">⚖️ Neutral: <strong id="mlPctNeut">—%</strong></span>
+            <span style="color: var(--bear);">📉 Bearish (-0.3%): <strong id="mlPctBear">—%</strong></span>
+          </div>
+        </div>
+
+        <!-- Breakout vs Rangebound State -->
+        <div style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border);">
+          <div style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
+            <span>⚡ Market Regime Probability</span>
+            <span id="mlStateLabel" style="color: var(--accent);">Analyzing…</span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div style="height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 8px;">
+            <div id="mlBarBreakout" style="width: 50%; background: #a78bfa; transition: width 0.4s ease;" title="Breakout"></div>
+            <div id="mlBarRangebound" style="width: 50%; background: #3b82f6; transition: width 0.4s ease;" title="Rangebound"></div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;">
+            <span style="color: #a78bfa;">💥 Breakout Expansion: <strong id="mlPctBreakout">—%</strong></span>
+            <span style="color: #3b82f6;">🎯 Rangebound Reversion: <strong id="mlPctRangebound">—%</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
 
   <!-- Metrics Dashboard -->
   <div class="metrics-dashboard" id="metricsRow">

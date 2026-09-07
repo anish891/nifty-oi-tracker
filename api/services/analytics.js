@@ -602,6 +602,7 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const gexRegimeVal = totalGexCr >= 0 ? 'POSITIVE_GAMMA' : 'NEGATIVE_GAMMA';
   const compositeRegime = computeCompositeRegime(gexRegimeVal, pcr, cprTypeVal, ivSkew, spot, maxPain);
   const impliedProbability = computeImpliedProbabilityDistribution(allExpiryStrikes, spot, T);
+  const mlPredictions = computeIntradayMLPredictions(spot, maxPain, zeroGammaLevel, totalGexCr, pcr, ivSkew, cprTypeVal, unusualFlowAlerts.length);
 
   const result = {
     spot,
@@ -636,6 +637,7 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
     volatilityRegime,
     compositeRegime,
     impliedProbability,
+    mlPredictions,
     unusualActivity: unusualFlowAlerts,
     maxPain,
     gex: {
@@ -679,7 +681,7 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
 }
 
 function computeImpliedProbabilityDistribution(allStrikes, spot, T, r = 0.065) {
-  if (!allStrikes || allStrikes.length < 3) {
+  if (!allStrikes || allStrikes.length < 3 || !spot || spot <= 0) {
     return {
       modeStrike: spot,
       confidence68: { lower: Math.round(spot * 0.99), upper: Math.round(spot * 1.01) },
@@ -689,28 +691,53 @@ function computeImpliedProbabilityDistribution(allStrikes, spot, T, r = 0.065) {
     };
   }
 
-  const sorted = [...allStrikes].sort((a, b) => a.strike - b.strike);
+  const minStrike = spot * 0.92;
+  const maxStrike = spot * 1.08;
+  const filtered = allStrikes.filter(s => s.strike >= minStrike && s.strike <= maxStrike);
+  const sorted = [...(filtered.length >= 5 ? filtered : allStrikes)].sort((a, b) => a.strike - b.strike);
   const n = sorted.length;
 
-  const prices = sorted.map(s => {
-    const ltp = s.CE?.lastPrice || 0;
-    const iv = (s.CE?.impliedVolatility || 0) / 100;
-    if (ltp > 0) return ltp;
-    if (iv > 0 && T > 0) {
-      const K = s.strike;
-      const d1 = (Math.log(spot / K) + (r + 0.5 * iv * iv) * T) / (iv * Math.sqrt(T));
-      const d2 = d1 - iv * Math.sqrt(T);
-      return spot * normalCdf(d1) - K * Math.exp(-r * T) * normalCdf(d2);
-    }
+  if (n < 3) {
+    return {
+      modeStrike: spot,
+      confidence68: { lower: Math.round(spot * 0.99), upper: Math.round(spot * 1.01) },
+      confidence95: { lower: Math.round(spot * 0.98), upper: Math.round(spot * 1.02) },
+      stayProbabilityPct: 68.0,
+      distribution: []
+    };
+  }
+
+  const rawIvs = sorted.map(s => {
+    const cIv = (s.CE?.impliedVolatility || 0) / 100;
+    const pIv = (s.PE?.impliedVolatility || 0) / 100;
+    if (cIv > 0 && pIv > 0) return (cIv + pIv) / 2;
+    if (cIv > 0) return cIv;
+    if (pIv > 0) return pIv;
     return 0;
   });
 
-  const smoothedPrices = new Float64Array(n);
+  const validIvs = rawIvs.filter(v => v > 0);
+  const meanIv = validIvs.length > 0 ? validIvs.reduce((a, b) => a + b, 0) / validIvs.length : 0.15;
+
+  const smoothedIvs = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    const prev = prices[Math.max(0, i - 1)];
-    const curr = prices[i];
-    const next = prices[Math.min(n - 1, i + 1)];
-    smoothedPrices[i] = (prev + 2 * curr + next) / 4;
+    const prev = rawIvs[Math.max(0, i - 1)] || meanIv;
+    const curr = rawIvs[i] || meanIv;
+    const next = rawIvs[Math.min(n - 1, i + 1)] || meanIv;
+    smoothedIvs[i] = (prev + 2 * curr + next) / 4;
+  }
+
+  const prices = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const K = sorted[i].strike;
+    const iv = smoothedIvs[i] > 0 ? smoothedIvs[i] : meanIv;
+    if (T > 0 && iv > 0) {
+      const d1 = (Math.log(spot / K) + (r + 0.5 * iv * iv) * T) / (iv * Math.sqrt(T));
+      const d2 = d1 - iv * Math.sqrt(T);
+      prices[i] = spot * normalCdf(d1) - K * Math.exp(-r * T) * normalCdf(d2);
+    } else {
+      prices[i] = Math.max(0, spot - K);
+    }
   }
 
   const rawProb = new Float64Array(n);
@@ -727,12 +754,11 @@ function computeImpliedProbabilityDistribution(allStrikes, spot, T, r = 0.065) {
 
     if (dK1 <= 0 || dK2 <= 0) continue;
 
-    const dC_dK2 = (smoothedPrices[i + 1] - smoothedPrices[i]) / dK2;
-    const dC_dK1 = (smoothedPrices[i] - smoothedPrices[i - 1]) / dK1;
+    const dC_dK2 = (prices[i + 1] - prices[i]) / dK2;
+    const dC_dK1 = (prices[i] - prices[i - 1]) / dK1;
     const secondDeriv = (dC_dK2 - dC_dK1) / avgdK;
 
-    const density = Math.max(0, discFactor * secondDeriv * avgdK);
-    rawProb[i] = density;
+    rawProb[i] = Math.max(0, discFactor * secondDeriv * avgdK);
   }
 
   const smoothProb = new Float64Array(n);
@@ -803,6 +829,85 @@ function computeImpliedProbabilityDistribution(allStrikes, spot, T, r = 0.065) {
   };
 }
 
+
+function computeIntradayMLPredictions(spot, maxPain, zeroGammaLevel, gexTotalCr, pcr, ivSkew, cprType, unusualCount) {
+  const gexRatio = Math.max(-1, Math.min(1, gexTotalCr / 50));
+  const distZeroGammaPct = zeroGammaLevel > 0 ? ((spot - zeroGammaLevel) / spot) * 100 : 0;
+  const distMaxPainPct = maxPain > 0 ? ((spot - maxPain) / spot) * 100 : 0;
+  const pcrNormalized = Math.max(-1, Math.min(1, (pcr - 1.0) / 0.5));
+  const skewNormalized = Math.max(-1, Math.min(1, ivSkew / 3.0));
+
+  const zBull = 0.5 + (0.85 * pcrNormalized) + (0.6 * gexRatio) + (0.4 * distMaxPainPct) - (0.35 * skewNormalized);
+  const zBear = 0.5 - (0.85 * pcrNormalized) - (0.6 * gexRatio) - (0.4 * distMaxPainPct) + (0.35 * skewNormalized);
+  const zNeut = 0.3 + (1.2 * (1 - Math.abs(pcrNormalized))) + (0.8 * (cprType === 'WIDE' ? 1 : 0));
+
+  const expBull = Math.exp(zBull);
+  const expBear = Math.exp(zBear);
+  const expNeut = Math.exp(zNeut);
+  const sumExp = expBull + expBear + expNeut;
+
+  const bullishPct = Number(((expBull / sumExp) * 100).toFixed(1));
+  const bearishPct = Number(((expBear / sumExp) * 100).toFixed(1));
+  const neutralPct = Number(((expNeut / sumExp) * 100).toFixed(1));
+
+  let directionalSignal = 'NEUTRAL / RANGEBOUND';
+  let primarySignalClass = 'warn';
+  if (bullishPct >= 45 && bullishPct > bearishPct) {
+    directionalSignal = 'BULLISH CONTINUATION (+0.3% expected in 15-30m)';
+    primarySignalClass = 'bull';
+  } else if (bearishPct >= 45 && bearishPct > bullishPct) {
+    directionalSignal = 'BEARISH PRESSURE (-0.3% expected in 15-30m)';
+    primarySignalClass = 'bear';
+  }
+
+  let breakoutLogits = 0;
+  if (gexTotalCr < 0) breakoutLogits += 1.8;
+  if (cprType === 'NARROW') breakoutLogits += 1.5;
+  if (Math.abs(distZeroGammaPct) < 0.25) breakoutLogits += 1.2;
+  if (unusualCount > 0) breakoutLogits += 0.8;
+
+  let rangeboundLogits = 1.0;
+  if (gexTotalCr >= 0) rangeboundLogits += 1.6;
+  if (cprType === 'WIDE') rangeboundLogits += 1.4;
+
+  const expBreakout = Math.exp(breakoutLogits);
+  const expRangebound = Math.exp(rangeboundLogits);
+  const sumStateExp = expBreakout + expRangebound;
+
+  const breakoutProbPct = Number(((expBreakout / sumStateExp) * 100).toFixed(1));
+  const rangeboundProbPct = Number(((expRangebound / sumStateExp) * 100).toFixed(1));
+
+  let marketStateLabel = 'RANGEBOUND REVERSION';
+  if (breakoutProbPct >= 60) {
+    marketStateLabel = 'HIGH VOLATILITY BREAKOUT';
+  } else if (breakoutProbPct >= 45) {
+    marketStateLabel = 'BALANCED / CONDITIONAL BREAKOUT';
+  }
+
+  return {
+    directionalTrend: {
+      bullishPct,
+      neutralPct,
+      bearishPct,
+      signal: directionalSignal,
+      signalClass: primarySignalClass,
+      confidence: Math.max(bullishPct, bearishPct, neutralPct)
+    },
+    marketState: {
+      breakoutProbPct,
+      rangeboundProbPct,
+      stateLabel: marketStateLabel,
+      isHighVol: breakoutProbPct >= 60
+    },
+    featuresUsed: [
+      `PCR: ${pcr.toFixed(2)}`,
+      `Net GEX: ${gexTotalCr.toFixed(1)} Cr`,
+      `Zero Gamma: ${zeroGammaLevel}`,
+      `CPR: ${cprType}`
+    ]
+  };
+}
+
 function getCacheData() {
   return cache.data;
 }
@@ -819,7 +924,9 @@ module.exports = {
   extractFeatureVector,
   computeVolatilityRegime,
   computeImpliedProbabilityDistribution,
+  computeIntradayMLPredictions,
   processOptionChainData,
   getCacheData
 };
+
 

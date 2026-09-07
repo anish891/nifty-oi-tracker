@@ -121,7 +121,7 @@ function calculateCPR(H, L, C) {
   return { pivot, tc, bc, width };
 }
 
-const { calculateOptionGreeks, computeImpliedProbabilityDistribution } = require('./services/analytics');
+const { calculateOptionGreeks, computeImpliedProbabilityDistribution, computeIntradayMLPredictions } = require('./services/analytics');
 
 const cprRes = calculateCPR(24100, 23900, 24000);
 assert.strictEqual(cprRes.pivot, 24000);
@@ -179,5 +179,14 @@ assert(pdfResult.stayProbabilityPct > 0 && pdfResult.stayProbabilityPct <= 100, 
 
 console.log('✓ Test 6 Passed: Breeden-Litzenberger Implied Probability Model & Distribution calculation verified successfully.');
 
-console.log('\n✅ ALL MATHEMATICAL VERIFICATION TESTS PASSED SUCCESSFULLY!\n');
+// ── TEST 7: INTRADAY ML TREND & BREAKOUT PREDICTION ENGINE VERIFICATION ──
+const mlRes = computeIntradayMLPredictions(24000, 24000, 23950, -15.5, 1.35, 1.8, 'NARROW', 2);
+const trendSum = mlRes.directionalTrend.bullishPct + mlRes.directionalTrend.neutralPct + mlRes.directionalTrend.bearishPct;
 
+assert(trendSum >= 99.0 && trendSum <= 101.0, `Sum of trend probabilities (${trendSum}%) should be ~100%`);
+assert(mlRes.directionalTrend.bullishPct > mlRes.directionalTrend.bearishPct, 'High PCR (1.35) should produce higher bullish probability');
+assert(mlRes.marketState.breakoutProbPct > 50, 'Negative Gamma & Narrow CPR should signal higher breakout probability');
+
+console.log('✓ Test 7 Passed: Intraday ML Trend & Breakout Prediction Engine verified successfully.');
+
+console.log('\n✅ ALL MATHEMATICAL VERIFICATION TESTS PASSED SUCCESSFULLY!\n');

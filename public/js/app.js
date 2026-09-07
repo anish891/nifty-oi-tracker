@@ -278,8 +278,58 @@ export function renderAll() {
     renderProbabilityChart('pdfChartCanvas', ip, d.spot);
   }
 
+  if (d.mlPredictions) {
+    const ml = d.mlPredictions;
+
+    const signalBadge = document.getElementById('mlSignalBadge');
+    if (signalBadge) {
+      signalBadge.textContent = ml.directionalTrend.signal;
+      signalBadge.style.background = ml.directionalTrend.signalClass === 'bull' ? 'rgba(16,185,129,0.15)' :
+                                      ml.directionalTrend.signalClass === 'bear' ? 'rgba(239,68,68,0.15)' : 'var(--surface2)';
+      signalBadge.style.color = ml.directionalTrend.signalClass === 'bull' ? 'var(--bull)' :
+                                 ml.directionalTrend.signalClass === 'bear' ? 'var(--bear)' : 'var(--warn)';
+    }
+
+    const confEl = document.getElementById('mlDirectionConfidence');
+    if (confEl) confEl.textContent = `Confidence: ${ml.directionalTrend.confidence.toFixed(1)}%`;
+
+    const barBull = document.getElementById('mlBarBull');
+    const barNeut = document.getElementById('mlBarNeut');
+    const barBear = document.getElementById('mlBarBear');
+
+    if (barBull) barBull.style.width = `${ml.directionalTrend.bullishPct}%`;
+    if (barNeut) barNeut.style.width = `${ml.directionalTrend.neutralPct}%`;
+    if (barBear) barBear.style.width = `${ml.directionalTrend.bearishPct}%`;
+
+    const pctBull = document.getElementById('mlPctBull');
+    const pctNeut = document.getElementById('mlPctNeut');
+    const pctBear = document.getElementById('mlPctBear');
+
+    if (pctBull) pctBull.textContent = `${ml.directionalTrend.bullishPct}%`;
+    if (pctNeut) pctNeut.textContent = `${ml.directionalTrend.neutralPct}%`;
+    if (pctBear) pctBear.textContent = `${ml.directionalTrend.bearishPct}%`;
+
+    const stateLabel = document.getElementById('mlStateLabel');
+    if (stateLabel) {
+      stateLabel.textContent = ml.marketState.stateLabel;
+      stateLabel.style.color = ml.marketState.isHighVol ? '#a78bfa' : '#3b82f6';
+    }
+
+    const barBreakout = document.getElementById('mlBarBreakout');
+    const barRangebound = document.getElementById('mlBarRangebound');
+
+    if (barBreakout) barBreakout.style.width = `${ml.marketState.breakoutProbPct}%`;
+    if (barRangebound) barRangebound.style.width = `${ml.marketState.rangeboundProbPct}%`;
+
+    const pctBreakout = document.getElementById('mlPctBreakout');
+    const pctRangebound = document.getElementById('mlPctRangebound');
+
+    if (pctBreakout) pctBreakout.textContent = `${ml.marketState.breakoutProbPct}%`;
+    if (pctRangebound) pctRangebound.textContent = `${ml.marketState.rangeboundProbPct}%`;
+  }
 
   renderTradeSetup(d);
+
 
   const spikeAlerts = calculateAndRenderRoC(d);
 
