@@ -285,9 +285,9 @@ export function renderAll() {
     if (signalBadge) {
       signalBadge.textContent = ml.directionalTrend.signal;
       signalBadge.style.background = ml.directionalTrend.signalClass === 'bull' ? 'rgba(16,185,129,0.15)' :
-                                      ml.directionalTrend.signalClass === 'bear' ? 'rgba(239,68,68,0.15)' : 'var(--surface2)';
+        ml.directionalTrend.signalClass === 'bear' ? 'rgba(239,68,68,0.15)' : 'var(--surface2)';
       signalBadge.style.color = ml.directionalTrend.signalClass === 'bull' ? 'var(--bull)' :
-                                 ml.directionalTrend.signalClass === 'bear' ? 'var(--bear)' : 'var(--warn)';
+        ml.directionalTrend.signalClass === 'bear' ? 'var(--bear)' : 'var(--warn)';
     }
 
     const confEl = document.getElementById('mlDirectionConfidence');

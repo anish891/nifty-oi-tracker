@@ -95,46 +95,67 @@
 
   <!-- INTRADAY TACTICAL TRADE SETUP BANNER -->
   <div id="tradeSetupBannerSection" style="padding: 12px 20px 0 20px;">
-    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+    <div
+      style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; box-shadow: 0 4px 14px rgba(0,0,0,0.12);">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+          <span
+            style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
             🎯 Live Trade Setup & Tactical Action Plan
           </span>
-          <span id="setupBiasBadge" style="background: rgba(16,185,129,0.15); color: var(--bull); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+          <span id="setupBiasBadge"
+            style="background: rgba(16,185,129,0.15); color: var(--bull); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
             Bias: —
           </span>
         </div>
-        <span style="font-size: 10px; color: var(--muted);">Auto-synthesized from CPR, GEX Zero-Gamma, PCR RoC & Straddle Bounds</span>
+        <span style="font-size: 10px; color: var(--muted);">Auto-synthesized from CPR, GEX Zero-Gamma, PCR RoC &
+          Straddle Bounds</span>
       </div>
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
-        <div class="setup-bullet-card" style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
+        <div class="setup-bullet-card"
+          style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
+          <div
+            style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
             <span style="color: var(--accent); font-size: 12px;">📈</span> Today's Bias
           </div>
-          <div id="setupTodayBias" style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…</div>
+          <div id="setupTodayBias"
+            style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…
+          </div>
         </div>
 
-        <div class="setup-bullet-card" style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
+        <div class="setup-bullet-card"
+          style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
+          <div
+            style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
             <span style="color: var(--warn); font-size: 12px;">🎯</span> Key Target
           </div>
-          <div id="setupKeyTarget" style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…</div>
+          <div id="setupKeyTarget"
+            style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…
+          </div>
         </div>
 
-        <div class="setup-bullet-card" style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
+        <div class="setup-bullet-card"
+          style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
+          <div
+            style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
             <span style="color: var(--bear); font-size: 12px;">🛑</span> Invalidation Level
           </div>
-          <div id="setupInvalidation" style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…</div>
+          <div id="setupInvalidation"
+            style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…
+          </div>
         </div>
 
-        <div class="setup-bullet-card" style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
+        <div class="setup-bullet-card"
+          style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s ease, border-color 0.2s ease;">
+          <div
+            style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 5px;">
             <span style="color: var(--bull); font-size: 12px;">💡</span> Optimal Strategy
           </div>
-          <div id="setupOptimalStrategy" style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…</div>
+          <div id="setupOptimalStrategy"
+            style="font-size: 13px; font-weight: 700; color: var(--text); margin-top: 4px; line-height: 1.3;">Analyzing…
+          </div>
         </div>
       </div>
     </div>
@@ -245,47 +266,59 @@
   <!-- MARKET-IMPLIED EXPIRY PROBABILITY (BREEDEN-LITZENBERGER MODEL) -->
   <div id="impliedProbabilitySection" style="padding: 12px 20px 0 20px;">
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+          <span
+            style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
             📊 Market-Implied Expiry Probability (Breeden-Litzenberger PDF)
           </span>
-          <span style="background: rgba(139,92,246,0.15); color: #a78bfa; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+          <span
+            style="background: rgba(139,92,246,0.15); color: #a78bfa; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
             QUANT / ML MODEL
           </span>
         </div>
-        <span style="font-size: 10px; color: var(--muted);">Derived from 2nd numerical derivative of call price surface: ∂²C / ∂K²</span>
+        <span style="font-size: 10px; color: var(--muted);">Derived from 2nd numerical derivative of call price surface:
+          ∂²C / ∂K²</span>
       </div>
 
       <!-- Probability Summary Metrics Grid -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px;">
+      <div
+        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px;">
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Most Likely Expiry</div>
-          <div id="pdfModeStrike" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">—</div>
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Most Likely
+            Expiry</div>
+          <div id="pdfModeStrike" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">—
+          </div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Peak Implied Density (Mode)</div>
         </div>
 
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">68% Confidence Range</div>
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">68% Confidence
+            Range</div>
           <div id="pdf68Range" style="font-size: 15px; font-weight: 700; color: var(--bull); margin-top: 2px;">—</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">1-Sigma Expected Expiry Zone</div>
         </div>
 
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">95% Confidence Range</div>
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">95% Confidence
+            Range</div>
           <div id="pdf95Range" style="font-size: 15px; font-weight: 700; color: var(--warn); margin-top: 2px;">—</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">2-Sigma Tail Risk Zone</div>
         </div>
 
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">ATM ±1.5% Stay Probability</div>
-          <div id="pdfStayProbability" style="font-size: 18px; font-weight: 700; color: #a78bfa; margin-top: 2px;">—%</div>
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">ATM ±1.5% Stay
+            Probability</div>
+          <div id="pdfStayProbability" style="font-size: 18px; font-weight: 700; color: #a78bfa; margin-top: 2px;">—%
+          </div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Rangebound Holding Chance</div>
         </div>
       </div>
 
       <!-- Canvas Chart Container -->
-      <div style="position: relative; height: 220px; width: 100%; background: var(--bg); padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
+      <div
+        style="position: relative; height: 220px; width: 100%; background: var(--bg); padding: 10px; border-radius: 6px; border: 1px solid var(--border);">
         <canvas id="pdfChartCanvas"></canvas>
       </div>
     </div>
@@ -294,31 +327,40 @@
   <!-- INTRADAY ML TREND & BREAKOUT PREDICTION ENGINE CARD -->
   <div id="mlPredictionSection" style="padding: 12px 20px 0 20px;">
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+          <span
+            style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
             🤖 Intraday ML Trend & Breakout Prediction Engine
           </span>
-          <span id="mlSignalBadge" style="background: rgba(16,185,129,0.15); color: var(--bull); font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+          <span id="mlSignalBadge"
+            style="background: rgba(16,185,129,0.15); color: var(--bull); font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
             Signal: Analyzing…
           </span>
         </div>
-        <span style="font-size: 10px; color: var(--muted);">Logistic Softmax + Naive Bayes Ensemble (15-30m Horizon)</span>
+        <span style="font-size: 10px; color: var(--muted);">Logistic Softmax + Naive Bayes Ensemble (15-30m
+          Horizon)</span>
       </div>
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
         <!-- 15-30m Directional Forecast -->
         <div style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
+          <div
+            style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
             <span>📈 15-30m Directional Probability</span>
             <span id="mlDirectionConfidence" style="color: var(--accent);">Confidence: —</span>
           </div>
 
           <!-- Progress Bar -->
-          <div style="height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 8px;">
-            <div id="mlBarBull" style="width: 33.3%; background: var(--bull); transition: width 0.4s ease;" title="Bullish"></div>
-            <div id="mlBarNeut" style="width: 33.3%; background: var(--warn); transition: width 0.4s ease;" title="Neutral"></div>
-            <div id="mlBarBear" style="width: 33.3%; background: var(--bear); transition: width 0.4s ease;" title="Bearish"></div>
+          <div
+            style="height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 8px;">
+            <div id="mlBarBull" style="width: 33.3%; background: var(--bull); transition: width 0.4s ease;"
+              title="Bullish"></div>
+            <div id="mlBarNeut" style="width: 33.3%; background: var(--warn); transition: width 0.4s ease;"
+              title="Neutral"></div>
+            <div id="mlBarBear" style="width: 33.3%; background: var(--bear); transition: width 0.4s ease;"
+              title="Bearish"></div>
           </div>
 
           <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;">
@@ -330,15 +372,19 @@
 
         <!-- Breakout vs Rangebound State -->
         <div style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
+          <div
+            style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
             <span>⚡ Market Regime Probability</span>
             <span id="mlStateLabel" style="color: var(--accent);">Analyzing…</span>
           </div>
 
           <!-- Progress Bar -->
-          <div style="height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 8px;">
-            <div id="mlBarBreakout" style="width: 50%; background: #a78bfa; transition: width 0.4s ease;" title="Breakout"></div>
-            <div id="mlBarRangebound" style="width: 50%; background: #3b82f6; transition: width 0.4s ease;" title="Rangebound"></div>
+          <div
+            style="height: 12px; background: var(--surface2); border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 8px;">
+            <div id="mlBarBreakout" style="width: 50%; background: #a78bfa; transition: width 0.4s ease;"
+              title="Breakout"></div>
+            <div id="mlBarRangebound" style="width: 50%; background: #3b82f6; transition: width 0.4s ease;"
+              title="Rangebound"></div>
           </div>
 
           <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;">
