@@ -274,8 +274,6 @@ export function renderAll() {
 
     const stayEl = document.getElementById('pdfStayProbability');
     if (stayEl) stayEl.textContent = `${ip.stayProbabilityPct}%`;
-
-    renderProbabilityChart('pdfChartCanvas', ip, d.spot);
   }
 
   if (d.mlPredictions) {
