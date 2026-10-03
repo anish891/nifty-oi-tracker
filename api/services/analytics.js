@@ -269,7 +269,7 @@ async function computeVolatilityRegime(currentAtmIv, pool) {
       const { rows } = await pool.query('SELECT atm_iv FROM session_summaries WHERE atm_iv > 0 ORDER BY date DESC LIMIT $1', [WINDOW_SIZE]);
       pastIvs = rows.map(r => parseFloat(r.atm_iv));
     } catch (err) {
-      console.error('Error fetching past IVs from DB:', err.message);
+      // Standalone mode fallback
     }
   }
 
