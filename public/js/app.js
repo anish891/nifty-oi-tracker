@@ -51,6 +51,12 @@ function updateKeyStrip(d) {
   set('ksSpot', fmt(d.spot));
   set('ksAtm', fmt(d.atm));
   set('ksPcr', d.pcr.toFixed(2));
+  set('ksVix', d.vix ? `${d.vix.last.toFixed(2)} ${d.vix.percentChange >= 0 ? '▲' : '▼'}${Math.abs(d.vix.percentChange).toFixed(1)}%` : '—');
+  set('ksDay', d.day ? `${d.day.percentChange >= 0 ? '+' : ''}${d.day.percentChange.toFixed(2)}%` : '—');
+  set('ksPain', fmt(d.maxPain));
+  set('ksFut', d.impliedFuture ? `${fmt(d.impliedFuture)} (${d.basis >= 0 ? '+' : ''}${d.basis})` : '—');
+  const dayEl = document.getElementById('ksDay');
+  if (dayEl && d.day) dayEl.style.color = d.day.percentChange >= 0 ? 'var(--bull)' : 'var(--bear)';
   set('ksRegime', d.compositeRegime ? d.compositeRegime.regimeLabel : '—');
   document.body.classList.remove('is-loading');
   updateAge();
@@ -59,8 +65,8 @@ function updateKeyStrip(d) {
 function updateAge() {
   const el = document.getElementById('ksAge');
   if (!el || !currentData) return;
-  const sec = Math.max(0, Math.round((Date.now() - new Date(currentData.fetchedAt).getTime()) / 1000));
-  el.textContent = sec < 90 ? sec + 's ago' : Math.round(sec / 60) + 'm ago';
+  const sec = Math.max(0, Math.round((Date.now() - new Date(currentData.dataAsOf || currentData.fetchedAt).getTime()) / 1000));
+  el.textContent = sec < 90 ? sec + 's ago' : sec < 5400 ? Math.round(sec / 60) + 'm ago' : (sec / 3600).toFixed(1) + 'h ago';
   el.classList.toggle('stale', sec > 120 && isMarketOpen());
 }
 setInterval(updateAge, 1000);
@@ -93,7 +99,7 @@ export function renderAll() {
   document.getElementById('mPCRsub').textContent = d.pcr > 1.2 ? 'Bullish' : d.pcr < 0.8 ? 'Bearish' : 'Neutral';
 
   document.getElementById('mNtmPcr').textContent = d.ntmPcr !== undefined ? d.ntmPcr.toFixed(2) : '—';
-  document.getElementById('mWeightedPcr').textContent = d.weightedPcr !== undefined ? d.weightedPcr.toFixed(2) : '—';
+  document.getElementById('mVolPcr').textContent = d.volPcr !== undefined ? d.volPcr.toFixed(2) : '—';
 
   if (d.lowerRange && d.upperRange) {
     document.getElementById('mExpectedRange').textContent = `${fmt(Math.round(d.lowerRange))} - ${fmt(Math.round(d.upperRange))}`;
@@ -114,11 +120,14 @@ export function renderAll() {
     const totalLtp = document.getElementById('straddleTotalLtp');
     if (totalLtp) totalLtp.textContent = `₹${sd.straddlePrice.toFixed(2)}`;
     const openPrice = document.getElementById('straddleOpenPrice');
-    if (openPrice) openPrice.textContent = `₹${sd.openStraddle.toFixed(2)}`;
-    const highPrice = document.getElementById('straddleHighPrice');
-    if (highPrice) highPrice.textContent = `₹${sd.highStraddle.toFixed(2)}`;
-    const lowPrice = document.getElementById('straddleLowPrice');
-    if (lowPrice) lowPrice.textContent = `₹${sd.lowStraddle.toFixed(2)}`;
+    if (openPrice) openPrice.textContent = sd.prevCloseStraddle ? `₹${sd.prevCloseStraddle.toFixed(2)}` : '—';
+    const dayChg = document.getElementById('straddleDayChg');
+    if (dayChg) {
+      dayChg.textContent = sd.prevCloseStraddle ? `${sd.decayPct >= 0 ? '+' : ''}${sd.decayPct.toFixed(1)}%` : '—';
+      dayChg.style.color = sd.decayPct < 0 ? 'var(--bull)' : sd.decayPct > 0 ? 'var(--bear)' : 'var(--muted)';
+    }
+    const dailyMove = document.getElementById('straddleDailyMove');
+    if (dailyMove) dailyMove.textContent = sd.dailyMove ? `±${sd.dailyMove.toFixed(0)}` : '—';
 
     const expMove = document.getElementById('straddleExpectedMove');
     if (expMove) expMove.textContent = `± ${sd.expectedMove.toFixed(1)} pts (${sd.expectedMovePct.toFixed(2)}%)`;
@@ -132,15 +141,15 @@ export function renderAll() {
     const decayBadge = document.getElementById('straddleDecayBadge');
     if (decayBadge) {
       if (sd.decayStatus === 'DECAYING') {
-        decayBadge.textContent = `📉 ${sd.decayPct.toFixed(1)}% Decay`;
+        decayBadge.textContent = `📉 ${Math.abs(sd.decayPct).toFixed(1)}% below prev session`;
         decayBadge.style.background = 'rgba(16,185,129,0.15)';
         decayBadge.style.color = 'var(--bull)';
       } else if (sd.decayStatus === 'EXPANDING') {
-        decayBadge.textContent = `📈 ${Math.abs(sd.decayPct).toFixed(1)}% Expansion`;
+        decayBadge.textContent = `📈 ${Math.abs(sd.decayPct).toFixed(1)}% above prev session`;
         decayBadge.style.background = 'rgba(239,68,68,0.15)';
         decayBadge.style.color = 'var(--bear)';
       } else {
-        decayBadge.textContent = `⚖️ Stable (${sd.decayPct.toFixed(1)}%)`;
+        decayBadge.textContent = `⚖️ Flat vs prev session (${sd.decayPct.toFixed(1)}%)`;
         decayBadge.style.background = 'var(--surface2)';
         decayBadge.style.color = 'var(--text)';
       }
@@ -178,18 +187,21 @@ export function renderAll() {
   if (skewEl) {
     if (d.ivSkew !== undefined) {
       skewEl.textContent = (d.ivSkew > 0 ? '+' : '') + d.ivSkew.toFixed(1) + '%';
-      skewEl.className = 'val ' + (d.ivSkew > 1 ? 'bull' : d.ivSkew < -1 ? 'bear' : 'warn');
+      skewEl.className = 'val ' + (d.ivSkew > 1 ? 'bear' : d.ivSkew < -1 ? 'bull' : 'warn');
       const skewSub = document.getElementById('mIvSkewSub');
       if (skewSub) {
         if (d.ivSkew > 1) {
-          skewSub.textContent = 'PE IV higher (Fearful)';
-          skewSub.className = 'sub bull';
-        } else if (d.ivSkew < -1) {
-          skewSub.textContent = 'CE IV higher (Greedy)';
+          skewSub.textContent = 'Puts richer (hedging demand)';
           skewSub.className = 'sub bear';
+        } else if (d.ivSkew < -1) {
+          skewSub.textContent = 'Calls richer (upside chasing)';
+          skewSub.className = 'sub bull';
         } else {
           skewSub.textContent = 'Balanced IV';
           skewSub.className = 'sub warn';
+        }
+        if (d.ivSkewDetail) {
+          skewSub.title = `${d.ivSkewMethod}: ${d.ivSkewDetail.putStrike}PE ${d.ivSkewDetail.putIv}% vs ${d.ivSkewDetail.callStrike}CE ${d.ivSkewDetail.callIv}%`;
         }
       }
     } else {
@@ -197,7 +209,6 @@ export function renderAll() {
       document.getElementById('mIvSkewSub').textContent = '—';
     }
   }
-
   const volBadge = document.getElementById('volRegimeBadge');
   if (d.volatilityRegime && volBadge) {
     const vr = d.volatilityRegime;
@@ -208,14 +219,21 @@ export function renderAll() {
           vr.regime === 'NORMAL_IV' ? 'vol-normal' : 'vol-history'
     );
 
-    if (vr.regime === 'INSUFFICIENT_HISTORY') {
-      volBadge.title = `Need at least 5 sessions (Current: ${vr.sampleCount})`;
+    if (vr.source === 'VIX') {
+      volBadge.title = `India VIX ${vr.vix} (${vr.vixChangePct >= 0 ? '+' : ''}${vr.vixChangePct}% today) | ATM IV ${vr.todayIv}% (${vr.atmIvVsVix >= 0 ? '+' : ''}${vr.atmIvVsVix} vs VIX). No stored IV history, so regime uses VIX level (≥20 high, ≤12 low).`;
+    } else if (vr.regime === 'INSUFFICIENT_HISTORY') {
+      volBadge.title = 'No IV history and VIX unavailable';
     } else {
       volBadge.title = `z = ${vr.zScore > 0 ? '+' : ''}${vr.zScore} | 20-day avg IV: ${vr.mean20}% | StdDev: ${vr.stddev20}% | Today: ${vr.todayIv}%`;
     }
   }
 
   document.getElementById('mMaxPain').textContent = fmt(d.maxPain);
+  if (d.walls) {
+    const fmtWalls = ws => ws.map(w => `${fmt(w.strike)} <span style="color:var(--muted)">(${fmtK(w.oi)})</span>`).join('<br>') || '—';
+    document.getElementById('mWallsCall').innerHTML = fmtWalls(d.walls.calls);
+    document.getElementById('mWallsPut').innerHTML = fmtWalls(d.walls.puts);
+  }
   document.getElementById('mTime').textContent = timeStr(d.fetchedAt);
 
   if (d.cpr) {
@@ -229,6 +247,11 @@ export function renderAll() {
       cprTypeEl.className = 'val ' + (d.cpr.cprType === 'NARROW' ? 'bull' : d.cpr.cprType === 'WIDE' ? 'bear' : 'warn');
     }
 
+    const srcEl = document.getElementById('cprSource');
+    if (srcEl) {
+      srcEl.textContent = d.cpr.source === 'PREV_SESSION' ? `· from ${d.cpr.basisDate} H/L/C` : '· ⚠ OI-estimate (prev-session data unavailable)';
+      srcEl.style.color = d.cpr.source === 'PREV_SESSION' ? 'var(--muted)' : 'var(--warn)';
+    }
     document.getElementById('mCprR1').textContent = fmt(d.cpr.r1);
     document.getElementById('mCprS1').textContent = fmt(d.cpr.s1);
     document.getElementById('mCprR2').textContent = fmt(d.cpr.r2);
@@ -248,8 +271,10 @@ export function renderAll() {
       gexRegimeEl.className = 'sub ' + (d.gex.gexRegime === 'POSITIVE_GAMMA' ? 'bull' : 'bear');
     }
 
-    document.getElementById('mZeroGamma').textContent = fmt(d.gex.zeroGammaLevel);
-    document.getElementById('mGexDist').textContent = (d.gex.distToZeroGamma >= 0 ? '+' : '') + d.gex.distToZeroGamma + ' pts to flip';
+    document.getElementById('mZeroGamma').textContent = d.gex.zeroGammaLevel !== null ? fmt(d.gex.zeroGammaLevel) : 'None';
+    document.getElementById('mGexDist').textContent = d.gex.distToZeroGamma !== null
+      ? (d.gex.distToZeroGamma >= 0 ? '+' : '') + d.gex.distToZeroGamma + ' pts to flip'
+      : 'No sign flip within ±1500 pts';
 
     document.getElementById('mCallGex').textContent = d.gex.callGexCr;
     document.getElementById('mPutGex').textContent = d.gex.putGexCr;
@@ -273,7 +298,7 @@ export function renderAll() {
     const cr = d.compositeRegime;
     document.getElementById('regimeTitle').textContent = cr.regimeLabel;
     document.getElementById('regimeStrategy').textContent = 'Strategy: ' + cr.actionableStrategy;
-    document.getElementById('regimeConfidence').textContent = `Confidence: ${cr.confidenceScore}%`;
+    document.getElementById('regimeConfidence').textContent = `Signal agreement: ${cr.confidenceScore}%`;
 
     const biasBadge = document.getElementById('tacticalBiasBadge');
     if (biasBadge) {
@@ -313,7 +338,7 @@ export function renderAll() {
     }
 
     const confEl = document.getElementById('mlDirectionConfidence');
-    if (confEl) confEl.textContent = `Confidence: ${ml.directionalTrend.confidence.toFixed(1)}%`;
+    if (confEl) confEl.textContent = `Lean strength: ${ml.directionalTrend.confidence.toFixed(1)}%`;
 
     const barBull = document.getElementById('mlBarBull');
     const barNeut = document.getElementById('mlBarNeut');
@@ -533,9 +558,13 @@ function calculateAndRenderRoC(d) {
 
 export async function fetchSimilarSessions() {
   try {
-    const topMatches = await fetchSimilarSessionsData();
+    const { topMatches, reason } = await fetchSimilarSessionsData();
     const container = document.getElementById('similarSessionsList');
-    if (!container || !topMatches || topMatches.length === 0) return;
+    if (!container) return;
+    if (!topMatches || topMatches.length === 0) {
+      container.innerHTML = `<div style="color:var(--muted); text-align:center; padding:10px;">${reason || 'No matching sessions'}</div>`;
+      return;
+    }
 
     container.innerHTML = topMatches.map(m => `
       <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:4px 8px; border-radius:4px;">
@@ -599,8 +628,8 @@ export function renderTable() {
     const pBid = pe.bidprice || 0;
     const pAsk = pe.askPrice || 0;
 
-    const cBD = getSmoothedBuildup(r.strike, cOI, cLTP, true);
-    const pBD = getSmoothedBuildup(r.strike, pOI, pLTP, false);
+    const cBD = getSmoothedBuildup(r.strike, cOI, cLTP, true, cChg, ce.change || 0);
+    const pBD = getSmoothedBuildup(r.strike, pOI, pLTP, false, pChg, pe.change || 0);
 
     const cBarW = pct(cOI, maxCallOI);
     const pBarW = pct(pOI, maxPutOI);
@@ -1055,7 +1084,7 @@ function buildPdfReportElement(d) {
         <div style="font-size: 16px; font-weight: 800; color: ${d.pcr > 1.2 ? '#059669' : d.pcr < 0.8 ? '#dc2626' : '#d97706'}; margin-top: 2px;">
           ${d.pcr ? d.pcr.toFixed(2) : '—'} <span style="font-size: 11px; font-weight: 600;">(${d.pcr > 1.2 ? 'Bullish' : d.pcr < 0.8 ? 'Bearish' : 'Neutral'})</span>
         </div>
-        <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Near ATM: ${d.ntmPcr ? d.ntmPcr.toFixed(2) : '—'} | Wtd: ${d.weightedPcr ? d.weightedPcr.toFixed(2) : '—'}</div>
+        <div style="font-size: 10px; color: #64748b; margin-top: 2px;">Near ATM: ${d.ntmPcr ? d.ntmPcr.toFixed(2) : '—'} | Vol: ${d.volPcr ? d.volPcr.toFixed(2) : '—'}</div>
       </div>
 
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
@@ -1065,7 +1094,7 @@ function buildPdfReportElement(d) {
       </div>
 
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 12px;">
-        <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Expected Day Range</div>
+        <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase;">Expected Range (to Expiry)</div>
         <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 2px;">
           ${d.lowerRange ? fmt(Math.round(d.lowerRange)) : '—'} - ${d.upperRange ? fmt(Math.round(d.upperRange)) : '—'}
         </div>
@@ -1204,16 +1233,15 @@ export function renderTradeSetup(d) {
   const isPosGamma = d.gex ? (d.gex.totalGexCr >= 0) : true;
   const sd = d.straddleDetails || {};
 
-  // Evaluate Directional Bias
-  let isBullish = spot >= pivot || pcr > 1.05;
-  let isBearish = spot < pivot || pcr < 0.95;
-  if (spot > tc && pcr > 1.1) {
-    isBullish = true;
-    isBearish = false;
-  } else if (spot < bc && pcr < 0.9) {
-    isBearish = true;
-    isBullish = false;
-  }
+  // Directional bias = agreement of three independent reads (each -1/0/+1):
+  // price vs CPR, PCR, and the composite regime. Needs 2+ net votes, so Neutral is reachable.
+  const cprPos = spot > tc ? 1 : spot < bc ? -1 : 0;
+  const pcrPos = pcr > 1.2 ? 1 : pcr < 0.8 ? -1 : 0;
+  const tb = d.compositeRegime ? d.compositeRegime.tacticalBias : '';
+  const regimePos = tb.includes('BULL') ? 1 : tb.includes('BEAR') ? -1 : 0;
+  const biasScore = cprPos + pcrPos + regimePos;
+  const isBullish = biasScore >= 2;
+  const isBearish = biasScore <= -2;
 
   let biasText = '';
   let biasBadgeText = '';
@@ -1221,17 +1249,17 @@ export function renderTradeSetup(d) {
   let biasBg = 'rgba(245,158,11,0.15)';
 
   if (isBullish) {
-    biasText = `Bullish above ${fmt(Math.round(pivot))} (CPR Pivot)`;
+    biasText = `Bullish while above ${fmt(Math.round(tc))} (CPR top) · ${biasScore}/3 signals`;
     biasBadgeText = 'Bias: Bullish 📈';
     biasColor = 'var(--bull)';
     biasBg = 'rgba(16,185,129,0.15)';
   } else if (isBearish) {
-    biasText = `Bearish below ${fmt(Math.round(pivot))} (CPR Pivot)`;
+    biasText = `Bearish while below ${fmt(Math.round(bc))} (CPR bottom) · ${Math.abs(biasScore)}/3 signals`;
     biasBadgeText = 'Bias: Bearish 📉';
     biasColor = 'var(--bear)';
     biasBg = 'rgba(239,68,68,0.15)';
   } else {
-    biasText = `Neutral / Rangebound around ${fmt(Math.round(pivot))} (CPR Pivot)`;
+    biasText = `Neutral / Rangebound around ${fmt(Math.round(pivot))} (mixed signals, ${biasScore >= 0 ? '+' : ''}${biasScore}/3)`;
     biasBadgeText = 'Bias: Neutral ⚖️';
     biasColor = 'var(--warn)';
     biasBg = 'rgba(245,158,11,0.15)';

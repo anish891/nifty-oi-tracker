@@ -156,13 +156,13 @@ router.get('/similar-sessions', async (req, res) => {
     }
 
     if (pastSessions.length === 0) {
-      pastSessions = [
-        { date: '2026-07-24', closing_pcr: 1.32, gex_regime: 'POSITIVE_GAMMA', cpr_width_type: 'NARROW', feature_vector: [1.32, 1.0, 0.18, 1.8, 0.4, 1.2] },
-        { date: '2026-07-23', closing_pcr: 0.78, gex_regime: 'NEGATIVE_GAMMA', cpr_width_type: 'WIDE', feature_vector: [0.78, -1.0, 0.65, -2.1, -1.1, -0.5] },
-        { date: '2026-07-22', closing_pcr: 1.05, gex_regime: 'POSITIVE_GAMMA', cpr_width_type: 'AVERAGE', feature_vector: [1.05, 1.0, 0.42, 0.2, 0.1, 0.3] },
-        { date: '2026-07-21', closing_pcr: 0.85, gex_regime: 'NEGATIVE_GAMMA', cpr_width_type: 'AVERAGE', feature_vector: [0.85, -1.0, 0.48, -1.2, -0.8, -0.2] },
-        { date: '2026-07-20', closing_pcr: 1.25, gex_regime: 'POSITIVE_GAMMA', cpr_width_type: 'NARROW', feature_vector: [1.25, 1.0, 0.22, 1.4, 0.6, 0.9] }
-      ];
+      // No stored sessions (DB disabled/empty): say so instead of inventing history.
+      return res.json({
+        ok: true,
+        currentVector,
+        topMatches: [],
+        reason: pool ? 'No saved sessions yet' : 'Session history needs a database (DATABASE_URL not set)'
+      });
     }
 
     const scored = pastSessions.map(sess => {

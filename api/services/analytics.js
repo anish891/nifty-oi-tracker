@@ -1,157 +1,143 @@
 const { saveSnapshotsAsync } = require('./db');
 
-const welfordStats = {
-  CE: {},
-  PE: {}
-};
+const { getIndexSnapshot, getPivotBasis } = require('./market');
 
-function updateWelfordZScore(strike, oiChange, isCall, threshold = 2.5) {
+// ── Tunables (override via env) ──────────────────────────────────────────
+const RISK_FREE_RATE = parseFloat(process.env.RISK_FREE_RATE) || 0.065;
+// NIFTY lot size changes by NSE circular. GEX magnitude scales linearly with it
+// (sign, regime and zero-gamma level do not). Verify against the current contract spec.
+const LOT_SIZE = parseInt(process.env.NIFTY_LOT_SIZE, 10) || 65;
+const PCR_BULL = 1.2;
+const PCR_BEAR = 0.8;
+
+// Anomaly / flow detectors are fed *increments between distinct NSE snapshots*.
+// (NSE's changeinOpenInterest and totalTradedVolume are cumulative for the day, so
+// comparing them to their own history only ever detects "the day has progressed".)
+const welfordStats = { CE: {}, PE: {} };
+const MIN_ANOMALY_INCREMENT = 2000; // contracts; ignore statistically-odd but tiny moves
+
+function updateWelfordZScore(key, increment, isCall, threshold = 2.5) {
   const targetMap = isCall ? welfordStats.CE : welfordStats.PE;
-  if (!targetMap[strike]) {
-    targetMap[strike] = { count: 0, mean: 0, M2: 0 };
+  if (!targetMap[key]) targetMap[key] = { count: 0, mean: 0, M2: 0 };
+  const stat = targetMap[key];
+
+  // Score against history *before* this sample so a spike doesn't dilute its own z-score.
+  let result = { isAnomaly: false, zScore: 0 };
+  if (stat.count >= 5) {
+    const stddev = Math.sqrt(stat.M2 / (stat.count - 1));
+    if (stddev > 0) {
+      const z = (increment - stat.mean) / stddev;
+      result = {
+        isAnomaly: Math.abs(z) >= threshold && Math.abs(increment) >= MIN_ANOMALY_INCREMENT,
+        zScore: Number(z.toFixed(2))
+      };
+    }
   }
 
-  const stat = targetMap[strike];
   stat.count += 1;
-
-  const delta = oiChange - stat.mean;
+  const delta = increment - stat.mean;
   stat.mean += delta / stat.count;
-  const delta2 = oiChange - stat.mean;
-  stat.M2 += delta * delta2;
-
-  if (stat.count < 3) {
-    return { isAnomaly: false, zScore: 0 };
-  }
-
-  const variance = stat.M2 / (stat.count - 1);
-  const stddev = Math.sqrt(variance);
-
-  if (stddev === 0) {
-    return { isAnomaly: false, zScore: 0 };
-  }
-
-  const zScore = (oiChange - stat.mean) / stddev;
-  const isAnomaly = Math.abs(zScore) >= threshold;
-
-  return {
-    isAnomaly,
-    zScore: Number(zScore.toFixed(2))
-  };
+  stat.M2 += delta * (increment - stat.mean);
+  return result;
 }
 
-const strikeTickBuffers = {
-  CE: {},
-  PE: {}
-};
+const strikeTickBuffers = { CE: {}, PE: {} };
 
-const straddleTracker = {
-  expiry: null,
-  atm: null,
-  openStraddle: null,
-  highStraddle: 0,
-  lowStraddle: Infinity,
-  history: []
-};
-
-function updateAndDetectUnusualFlow(strike, volume, oiChg, isCall) {
+/**
+ * volInc / oiInc are increments since the previous NSE snapshot.
+ * Compared against the mean of *prior* increments (current sample excluded).
+ */
+function updateAndDetectUnusualFlow(strike, volInc, oiInc, isCall, key = strike) {
   const targetMap = isCall ? strikeTickBuffers.CE : strikeTickBuffers.PE;
-  if (!targetMap[strike]) targetMap[strike] = [];
-  const buf = targetMap[strike];
+  if (!targetMap[key]) targetMap[key] = [];
+  const buf = targetMap[key];
+  const oiAbs = Math.abs(oiInc);
 
-  buf.push({ volume, oiChg: Math.abs(oiChg), ts: Date.now() });
-  if (buf.length > 20) buf.shift();
+  let result = null;
+  if (buf.length >= 3) {
+    const meanVol = buf.reduce((a, x) => a + x.volume, 0) / buf.length;
+    const meanOi = buf.reduce((a, x) => a + x.oiChg, 0) / buf.length;
+    const volRatio = meanVol > 0 ? volInc / meanVol : 1;
+    const oiRatio = meanOi > 0 ? oiAbs / meanOi : 1;
 
-  if (buf.length < 3) return null;
-
-  let sumVol = 0;
-  let sumOiChg = 0;
-  for (let i = 0; i < buf.length; i++) {
-    sumVol += buf[i].volume;
-    sumOiChg += buf[i].oiChg;
+    const isUnusual = (volRatio >= 2.5 && volInc >= 3000) || (volRatio >= 1.8 && oiRatio >= 2 && volInc >= 1500);
+    if (isUnusual) {
+      const type = isCall ? 'CE' : 'PE';
+      result = {
+        strike,
+        optionType: type,
+        volRatio: Number(volRatio.toFixed(1)),
+        oiRatio: Number(oiRatio.toFixed(1)),
+        intensity: (volRatio >= 4 || oiRatio >= 3.5) ? 'CRITICAL' : 'HIGH',
+        volume: volInc,
+        oiChg: oiInc,
+        summary: `${strike} ${type}: ${volRatio.toFixed(1)}x Vol Surge (+${(volInc / 1000).toFixed(1)}k contracts)`
+      };
+    }
   }
-  const meanVol = sumVol / buf.length;
-  const meanOiChg = sumOiChg / buf.length;
 
-  const volRatio = meanVol > 0 ? volume / meanVol : 1;
-  const oiRatio = meanOiChg > 0 ? Math.abs(oiChg) / meanOiChg : 1;
-
-  const isUnusual = (volRatio >= 2.2 && volume >= 4000) || (volRatio >= 1.6 && oiRatio >= 1.8 && volume >= 2500);
-  if (!isUnusual) return null;
-
-  const intensity = (volRatio >= 3.5 || oiRatio >= 3.0) ? 'CRITICAL' : 'HIGH';
-  const type = isCall ? 'CE' : 'PE';
-
-  return {
-    strike,
-    optionType: type,
-    volRatio: Number(volRatio.toFixed(1)),
-    oiRatio: Number(oiRatio.toFixed(1)),
-    intensity,
-    volume,
-    oiChg,
-    summary: `${strike} ${type}: ${volRatio.toFixed(1)}x Vol Surge (${(volume / 1000).toFixed(1)}k Vol)`
-  };
+  buf.push({ volume: volInc, oiChg: oiAbs });
+  if (buf.length > 20) buf.shift();
+  return result;
 }
+
+// Per-expiry state so switching expiries doesn't mix baselines or double-count a snapshot.
+const flowState = { lastTs: {}, prev: {}, results: {}, recent: {} };
+const FLOW_VISIBLE_MS = 3 * 60 * 1000;
 
 function computeCompositeRegime(gexRegime, pcr, cprType, ivSkew, spot, maxPain) {
-  let regimeLabel = 'BALANCE & CONSOLIDATION';
-  let tacticalBias = 'NEUTRAL';
-  let confidenceScore = 75;
-  let primaryDrivers = [];
-  let actionableStrategy = 'Sell Iron Condors / Strangle near ATM';
+  const negGex = gexRegime === 'NEGATIVE_GAMMA';
+  const narrow = cprType === 'NARROW';
+  const bullPcr = pcr > PCR_BULL;
+  const bearPcr = pcr < PCR_BEAR;
+  const nearPain = maxPain > 0 && spot > 0 && Math.abs(spot - maxPain) / spot < 0.005;
 
-  const isNegGex = gexRegime === 'NEGATIVE_GAMMA';
-  const isPosGex = gexRegime === 'POSITIVE_GAMMA';
-  const isNarrowCpr = cprType === 'NARROW';
-  const isWideCpr = cprType === 'WIDE';
-  const isBullPcr = pcr > 1.15;
-  const isBearPcr = pcr < 0.85;
+  let regimeLabel;
+  let tacticalBias;
+  let actionableStrategy;
+  const drivers = [];
 
-  if (isNegGex && isNarrowCpr) {
+  if (negGex && narrow) {
     regimeLabel = '⚡ EXPLOSIVE BREAKOUT SETUP';
-    tacticalBias = isBullPcr ? 'BULLISH_BREAKOUT' : isBearPcr ? 'BEARISH_BREAKOUT' : 'VOLATILE_EXPANSION';
-    confidenceScore = 92;
-    primaryDrivers = ['Negative Market GEX (Accelerated Moves)', 'Narrow CPR (Coiled Volatility)'];
-    actionableStrategy = isBullPcr ? 'Long Call Spreads / Breakout Continuation' : 'Long Straddle / Directional Momentum';
-  } else if (isPosGex && (isWideCpr || cprType === 'AVERAGE')) {
-    regimeLabel = '🎯 RANGE-BOUND PINNING';
-    tacticalBias = 'RANGE_BOUND';
-    confidenceScore = 88;
-    primaryDrivers = ['Positive Market GEX (Dealer Mean Reversion)', 'Wide/Average CPR (Support & Resistance Holds)'];
-    actionableStrategy = 'Sell Premium (Short Straddles / Iron Flys around Max Pain)';
-  } else if (isBullPcr && isNegGex && spot > maxPain) {
+    tacticalBias = bullPcr ? 'BULLISH_BREAKOUT' : bearPcr ? 'BEARISH_BREAKOUT' : 'VOLATILE_EXPANSION';
+    drivers.push('Negative Market GEX (dealer hedging amplifies moves)', 'Narrow CPR (trend-day setup)');
+    if (bullPcr || bearPcr) drivers.push(`PCR ${pcr.toFixed(2)} confirms ${bullPcr ? 'upside' : 'downside'}`);
+    actionableStrategy = bullPcr ? 'Long Call Spreads / Breakout Continuation'
+      : bearPcr ? 'Long Put Spreads / Momentum Shorts' : 'Long Straddle / Wait for Direction';
+  } else if (negGex && bullPcr && spot > maxPain) {
     regimeLabel = '🚀 SHORT SQUEEZE RISK';
     tacticalBias = 'STRONG_BULLISH';
-    confidenceScore = 85;
-    primaryDrivers = ['High Put-Call Ratio (Bullish Support)', 'Negative Gamma Squeeze Potential', 'Spot trading above Max Pain'];
+    drivers.push(`High PCR (${pcr.toFixed(2)})`, 'Negative gamma squeeze potential', 'Spot above Max Pain');
     actionableStrategy = 'Ride Upward Momentum with Trailing Stop Loss';
-  } else if (isBearPcr && isNegGex) {
+  } else if (negGex && bearPcr) {
     regimeLabel = '📉 GAMMA SLIDE / CAPITULATION';
     tacticalBias = 'STRONG_BEARISH';
-    confidenceScore = 86;
-    primaryDrivers = ['Low PCR (Heavy Call Selling)', 'Negative Gamma Cascading Liquidation'];
+    drivers.push(`Low PCR (${pcr.toFixed(2)}, heavy call writing)`, 'Negative gamma cascading liquidation');
+    if (spot < maxPain) drivers.push('Spot below Max Pain');
     actionableStrategy = 'Buy Put Spreads / Fade Rallies into Resistance';
-  } else if (isPosGex && ivSkew > 1.2) {
-    regimeLabel = '🛡️ HEDGED CONSOLIDATION';
-    tacticalBias = 'NEUTRAL_ACCUMULATION';
-    confidenceScore = 80;
-    primaryDrivers = ['Dealer Long Gamma Buffer', 'Elevated Put IV Skew (Institutional Hedging)'];
-    actionableStrategy = 'Accumulate Quality Dips / Sell Put Spreads';
+  } else if (negGex) {
+    regimeLabel = '🌪️ VOLATILE TWO-WAY MOVES';
+    tacticalBias = 'VOLATILE_EXPANSION';
+    drivers.push('Negative Market GEX (moves get amplified)', `PCR ${pcr.toFixed(2)} is neutral — no directional edge`);
+    actionableStrategy = 'Reduce size / Defined-risk long volatility';
+  } else if (narrow) {
+    regimeLabel = '🌀 COILED UNDER POSITIVE GAMMA';
+    tacticalBias = 'NEUTRAL';
+    drivers.push('Positive GEX (dealers dampen moves)', 'Narrow CPR (breakout candidate)');
+    actionableStrategy = 'Wait for CPR break with volume; avoid naked short premium';
   } else {
-    regimeLabel = '⚖️ BALANCED ACCUMULATION';
-    tacticalBias = isBullPcr ? 'MILD_BULLISH' : isBearPcr ? 'MILD_BEARISH' : 'NEUTRAL';
-    confidenceScore = 78;
-    primaryDrivers = [`PCR at ${pcr.toFixed(2)}`, `CPR Type: ${cprType}`, `Gamma: ${gexRegime}`];
-    actionableStrategy = 'Trade Support & Resistance Boundaries';
+    regimeLabel = '🎯 RANGE-BOUND PINNING';
+    tacticalBias = bullPcr ? 'MILD_BULLISH' : bearPcr ? 'MILD_BEARISH' : 'RANGE_BOUND';
+    drivers.push('Positive Market GEX (dealer mean reversion)', `${cprType} CPR (range day likely)`);
+    if (nearPain) drivers.push('Spot pinned near Max Pain');
+    if (ivSkew > 1.2) drivers.push('Elevated put skew (hedging demand)');
+    actionableStrategy = 'Sell Premium (Iron Flys / Condors around Max Pain)';
   }
 
-  return {
-    regimeLabel,
-    tacticalBias,
-    confidenceScore,
-    primaryDrivers,
-    actionableStrategy
-  };
+  // Agreement between independent signals, not a calibrated probability.
+  const confidenceScore = Math.min(90, 45 + 15 * drivers.length);
+
+  return { regimeLabel, tacticalBias, confidenceScore, primaryDrivers: drivers, actionableStrategy };
 }
 
 function normalPdf(x) {
@@ -189,14 +175,14 @@ function getDTEInYears(expiryStr) {
   return Math.max(0.00005, diffDays / 365);
 }
 
-function calculateOptionGamma(S, K, T, v, r = 0.065) {
+function calculateOptionGamma(S, K, T, v, r = RISK_FREE_RATE) {
   if (S <= 0 || K <= 0 || T <= 0 || v <= 0) return 0;
   const d1 = (Math.log(S / K) + (r + 0.5 * v * v) * T) / (v * Math.sqrt(T));
   const gamma = normalPdf(d1) / (S * v * Math.sqrt(T));
   return isNaN(gamma) ? 0 : gamma;
 }
 
-function calculateOptionGreeks(S, K, T, v, isCall, r = 0.065) {
+function calculateOptionGreeks(S, K, T, v, isCall, r = RISK_FREE_RATE) {
   if (S <= 0 || K <= 0 || T <= 0 || v <= 0) {
     return { delta: 0, gamma: 0, vega: 0, theta: 0 };
   }
@@ -261,31 +247,44 @@ const WINDOW_SIZE = 20;
 const MIN_SAMPLES = 5;
 const Z_THRESHOLD = 1.5;
 
-async function computeVolatilityRegime(currentAtmIv, pool) {
+/**
+ * Prefers z-score of ATM IV against stored session history (needs a DB).
+ * Without history it falls back to India VIX levels — never to made-up numbers.
+ */
+async function computeVolatilityRegime(currentAtmIv, pool, vix = null) {
   let pastIvs = [];
-
   if (pool) {
     try {
       const { rows } = await pool.query('SELECT atm_iv FROM session_summaries WHERE atm_iv > 0 ORDER BY date DESC LIMIT $1', [WINDOW_SIZE]);
       pastIvs = rows.map(r => parseFloat(r.atm_iv));
     } catch (err) {
-      // Standalone mode fallback
+      // fall through to VIX
     }
-  }
-
-  if (pastIvs.length < MIN_SAMPLES) {
-    pastIvs = [14.2, 13.8, 14.5, 15.1, 14.0, 13.9, 14.8, 15.2, 14.1, 13.7];
   }
 
   const count = pastIvs.length;
   if (count < MIN_SAMPLES) {
+    if (vix && vix.last > 0) {
+      const regime = vix.last >= 20 ? 'HIGH_IV' : vix.last <= 12 ? 'LOW_IV' : 'NORMAL_IV';
+      const chg = vix.previousClose > 0 ? ((vix.last - vix.previousClose) / vix.previousClose) * 100 : 0;
+      return {
+        regime,
+        badgeText: `VIX ${vix.last.toFixed(1)} ${chg >= 0 ? '▲' : '▼'}${Math.abs(chg).toFixed(1)}%`,
+        source: 'VIX',
+        zScore: null,
+        todayIv: Number(currentAtmIv.toFixed(1)),
+        vix: vix.last,
+        vixChangePct: Number(chg.toFixed(2)),
+        atmIvVsVix: Number((currentAtmIv - vix.last).toFixed(2)),
+        sampleCount: count
+      };
+    }
     return {
       regime: 'INSUFFICIENT_HISTORY',
-      badgeText: 'Need 5+ sessions',
-      zScore: 0,
+      badgeText: 'No IV history',
+      source: 'NONE',
+      zScore: null,
       todayIv: Number(currentAtmIv.toFixed(1)),
-      mean20: 0,
-      stddev20: 0,
       sampleCount: count
     };
   }
@@ -293,30 +292,18 @@ async function computeVolatilityRegime(currentAtmIv, pool) {
   let mean = 0;
   let M2 = 0;
   for (let i = 0; i < count; i++) {
-    const x = pastIvs[i];
-    const delta = x - mean;
+    const delta = pastIvs[i] - mean;
     mean += delta / (i + 1);
-    const delta2 = x - mean;
-    M2 += delta * delta2;
+    M2 += delta * (pastIvs[i] - mean);
   }
-
   const stddev = count > 1 ? Math.sqrt(M2 / (count - 1)) : 0;
   const zScore = stddev > 0 ? (currentAtmIv - mean) / stddev : 0;
 
-  let regime = 'NORMAL_IV';
-  let badgeText = 'Normal IV';
-
-  if (zScore > Z_THRESHOLD) {
-    regime = 'HIGH_IV';
-    badgeText = 'High IV';
-  } else if (zScore < -Z_THRESHOLD) {
-    regime = 'LOW_IV';
-    badgeText = 'Low IV';
-  }
-
+  const regime = zScore > Z_THRESHOLD ? 'HIGH_IV' : zScore < -Z_THRESHOLD ? 'LOW_IV' : 'NORMAL_IV';
   return {
     regime,
-    badgeText,
+    badgeText: regime === 'HIGH_IV' ? 'High IV' : regime === 'LOW_IV' ? 'Low IV' : 'Normal IV',
+    source: 'HISTORY',
     zScore: Number(zScore.toFixed(2)),
     todayIv: Number(currentAtmIv.toFixed(1)),
     mean20: Number(mean.toFixed(1)),
@@ -325,31 +312,118 @@ async function computeVolatilityRegime(currentAtmIv, pool) {
   };
 }
 
+// ── Pure helpers (exported for tests) ────────────────────────────────────
+
+/** Pivot, BC/TC (ordered so TC >= BC) and R/S levels from a session's H/L/C. */
+function computeCPR(high, low, close, refPrice = close) {
+  const pivot = (high + low + close) / 3;
+  const mid = (high + low) / 2;
+  const mirror = 2 * pivot - mid;
+  const tc = Math.max(mid, mirror);
+  const bc = Math.min(mid, mirror);
+  const width = tc - bc;
+  const widthPct = refPrice > 0 ? (width / refPrice) * 100 : 0;
+  const range = high - low;
+  return {
+    pivot, tc, bc, width, widthPct,
+    r1: 2 * pivot - low, s1: 2 * pivot - high,
+    r2: pivot + range, s2: pivot - range
+  };
+}
+
+// Heuristic thresholds on width as % of price (typical Nifty CPR is ~0.1-0.4% wide).
+function classifyCPR(widthPct) {
+  return widthPct < 0.15 ? 'NARROW' : widthPct > 0.35 ? 'WIDE' : 'AVERAGE';
+}
+
+/** Spot at which net GEX changes sign, nearest to current spot; null if it never does. */
+function findZeroGamma(gexAt, spot, lo, hi, step = 10) {
+  let prevS = null;
+  let prevG = null;
+  let best = null;
+  for (let sPrice = lo; sPrice <= hi; sPrice += step) {
+    const g = gexAt(sPrice);
+    if (prevG !== null && ((prevG < 0 && g >= 0) || (prevG > 0 && g <= 0))) {
+      const x = prevS + (0 - prevG) * (sPrice - prevS) / (g - prevG);
+      if (best === null || Math.abs(x - spot) < Math.abs(best - spot)) best = x;
+    }
+    prevS = sPrice;
+    prevG = g;
+  }
+  return best === null ? null : Math.round(best);
+}
+
+/**
+ * 25-delta risk reversal: IV(25Δ put) - IV(25Δ call), in vol points.
+ * Positive = puts richer (hedging demand). Far better than comparing CE/PE IV at one strike,
+ * which mostly measures put-call parity noise.
+ */
+function computeRiskReversal25(strikes, spot, T, r = RISK_FREE_RATE) {
+  if (!(T > 0) || !(spot > 0)) return null;
+  let bestC = null;
+  let bestP = null;
+  const sqrtT = Math.sqrt(T);
+  for (const s of strikes) {
+    const K = s.strike;
+    const cIv = (s.CE?.impliedVolatility || 0) / 100;
+    const pIv = (s.PE?.impliedVolatility || 0) / 100;
+    if (K > spot && cIv > 0) {
+      const d1 = (Math.log(spot / K) + (r + 0.5 * cIv * cIv) * T) / (cIv * sqrtT);
+      const diff = Math.abs(normalCdf(d1) - 0.25);
+      if (!bestC || diff < bestC.diff) bestC = { diff, iv: cIv, strike: K };
+    }
+    if (K < spot && pIv > 0) {
+      const d1 = (Math.log(spot / K) + (r + 0.5 * pIv * pIv) * T) / (pIv * sqrtT);
+      const diff = Math.abs(normalCdf(d1) - 1 + 0.25);
+      if (!bestP || diff < bestP.diff) bestP = { diff, iv: pIv, strike: K };
+    }
+  }
+  if (!bestC || !bestP || bestC.diff > 0.12 || bestP.diff > 0.12) return null;
+  return {
+    value: (bestP.iv - bestC.iv) * 100,
+    putStrike: bestP.strike,
+    callStrike: bestC.strike,
+    putIv: bestP.iv * 100,
+    callIv: bestC.iv * 100
+  };
+}
+
+function parseNseTimestamp(str) {
+  if (!str) return null;
+  const d = new Date(`${str.replace(/-/g, ' ')} GMT+0530`);
+  return isNaN(d) ? null : d.toISOString();
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(null), ms))]);
+}
+
 let cache = { data: null, ts: 0, expiry: null };
 const CACHE_TTL = 5000; // 5s TTL (NSE data refreshes every ~30-60s)
 
 async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const now = Date.now();
-  if (
-    cache.data &&
-    now - cache.ts < CACHE_TTL &&
-    cache.expiry === targetExpiry
-  ) {
+  if (cache.data && now - cache.ts < CACHE_TTL && cache.expiry === targetExpiry) {
     return cache.data;
   }
+
+  const [indices, pivotBasis] = await Promise.all([
+    withTimeout(getIndexSnapshot(), 2500),
+    withTimeout(getPivotBasis(), 2500)
+  ]);
 
   const spot = raw.records.underlyingValue || raw.records.data?.[0]?.CE?.underlyingValue || raw.records.data?.[0]?.PE?.underlyingValue || 0;
   const atm = Math.round(spot / 50) * 50;
   const MIN_STRIKE = atm - 500;
   const MAX_STRIKE = atm + 500;
+  const T = getDTEInYears(targetExpiry);
+  const dteDays = T * 365;
   const allExpiryRows = (raw.records.data || []).filter(r => (r.expiryDate || r.expiryDates) === targetExpiry);
 
   const allExpiryStrikesMap = {};
   allExpiryRows.forEach(r => {
     const strike = r.strikePrice;
-    if (!allExpiryStrikesMap[strike]) {
-      allExpiryStrikesMap[strike] = { strike };
-    }
+    if (!allExpiryStrikesMap[strike]) allExpiryStrikesMap[strike] = { strike };
     if (r.CE) allExpiryStrikesMap[strike].CE = r.CE;
     if (r.PE) allExpiryStrikesMap[strike].PE = r.PE;
   });
@@ -357,196 +431,172 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const allExpiryStrikes = Object.values(allExpiryStrikesMap).sort((a, b) => a.strike - b.strike);
   const strikes = allExpiryStrikes.filter(s => s.strike >= MIN_STRIKE && s.strike <= MAX_STRIKE);
 
-  let totalCallOI = 0;
-  let totalPutOI = 0;
-  let totalCallChgOI = 0;
-  let totalPutChgOI = 0;
-
-  let maxCallOI = 0;
-  let maxPutOI = 0;
-  let maxCallOIStrike = atm;
-  let maxPutOIStrike = atm;
-
-  let weightedCallValue = 0;
-  let weightedPutValue = 0;
-
+  let totalCallOI = 0, totalPutOI = 0, totalCallChgOI = 0, totalPutChgOI = 0;
+  let totalCallVol = 0, totalPutVol = 0;
+  let maxCallOI = 0, maxPutOI = 0;
+  let maxCallOIStrike = atm, maxPutOIStrike = atm;
   const unusualFlowAlerts = [];
+
+  // New NSE snapshot? Only then do increments mean anything.
+  const nseTs = raw.records.timestamp || null;
+  const isNewSnapshot = nseTs === null || flowState.lastTs[targetExpiry] !== nseTs;
+  flowState.lastTs[targetExpiry] = nseTs;
+
+  const trackSide = (s, side, leg) => {
+    const isCall = side === 'CE';
+    const key = `${targetExpiry}|${s.strike}|${side}`;
+    const chg = leg.changeinOpenInterest || 0;
+    const vol = leg.totalTradedVolume || 0;
+
+    if (isNewSnapshot) {
+      const prev = flowState.prev[key];
+      let anomaly = { isAnomaly: false, zScore: 0 };
+      if (prev) {
+        const oiInc = chg - prev.chg;
+        const volInc = Math.max(0, vol - prev.vol);
+        anomaly = updateWelfordZScore(key, oiInc, isCall);
+        const flow = updateAndDetectUnusualFlow(s.strike, volInc, oiInc, isCall, key);
+        if (flow) flowState.recent[key] = { flow, ts: now };
+      }
+      flowState.prev[key] = { chg, vol };
+      flowState.results[key] = anomaly;
+    }
+
+    leg.anomaly = flowState.results[key] || { isAnomaly: false, zScore: 0 };
+    const rec = flowState.recent[key];
+    if (rec && now - rec.ts < FLOW_VISIBLE_MS) {
+      leg.unusualFlow = rec.flow;
+      unusualFlowAlerts.push(rec.flow);
+    }
+  };
 
   allExpiryStrikes.forEach(s => {
     const cOI = s.CE?.openInterest || 0;
     const pOI = s.PE?.openInterest || 0;
-    const cChg = s.CE?.changeinOpenInterest || 0;
-    const pChg = s.PE?.changeinOpenInterest || 0;
-
     totalCallOI += cOI;
     totalPutOI += pOI;
-    totalCallChgOI += cChg;
-    totalPutChgOI += pChg;
+    totalCallChgOI += s.CE?.changeinOpenInterest || 0;
+    totalPutChgOI += s.PE?.changeinOpenInterest || 0;
+    totalCallVol += s.CE?.totalTradedVolume || 0;
+    totalPutVol += s.PE?.totalTradedVolume || 0;
 
-    weightedCallValue += cOI * (s.CE?.lastPrice || 0);
-    weightedPutValue += pOI * (s.PE?.lastPrice || 0);
+    if (s.CE) trackSide(s, 'CE', s.CE);
+    if (s.PE) trackSide(s, 'PE', s.PE);
 
-    if (s.CE) {
-      s.CE.anomaly = updateWelfordZScore(s.strike, cChg, true);
-      const ceFlow = updateAndDetectUnusualFlow(s.strike, s.CE.totalTradedVolume || 0, cChg, true);
-      if (ceFlow) {
-        s.CE.unusualFlow = ceFlow;
-        unusualFlowAlerts.push(ceFlow);
-      }
-    }
-    if (s.PE) {
-      s.PE.anomaly = updateWelfordZScore(s.strike, pChg, false);
-      const peFlow = updateAndDetectUnusualFlow(s.strike, s.PE.totalTradedVolume || 0, pChg, false);
-      if (peFlow) {
-        s.PE.unusualFlow = peFlow;
-        unusualFlowAlerts.push(peFlow);
-      }
-    }
-
-    if (cOI > maxCallOI) {
-      maxCallOI = cOI;
-      maxCallOIStrike = s.strike;
-    }
-
-    if (pOI > maxPutOI) {
-      maxPutOI = pOI;
-      maxPutOIStrike = s.strike;
-    }
+    if (cOI > maxCallOI) { maxCallOI = cOI; maxCallOIStrike = s.strike; }
+    if (pOI > maxPutOI) { maxPutOI = pOI; maxPutOIStrike = s.strike; }
   });
 
-  const pcr = totalCallOI > 0 ? totalPutOI / totalCallOI : 0;
+  const topWalls = (side) => [...allExpiryStrikes]
+    .filter(s => (s[side]?.openInterest || 0) > 0)
+    .sort((a, b) => b[side].openInterest - a[side].openInterest)
+    .slice(0, 3)
+    .map(s => ({ strike: s.strike, oi: s[side].openInterest, chgOi: s[side].changeinOpenInterest || 0 }));
+  const walls = { calls: topWalls('CE'), puts: topWalls('PE') };
 
+  const pcr = totalCallOI > 0 ? totalPutOI / totalCallOI : 0;
+  const volPcr = totalCallVol > 0 ? totalPutVol / totalCallVol : 0;
+
+  // ── ATM straddle & expected move ──
   const atmStrikeObj = allExpiryStrikes.find(s => s.strike === atm) || allExpiryStrikes[Math.floor(allExpiryStrikes.length / 2)];
   const atmCE = atmStrikeObj?.CE || {};
   const atmPE = atmStrikeObj?.PE || {};
   const atmCELTP = atmCE.lastPrice || 0;
   const atmPELTP = atmPE.lastPrice || 0;
   const straddlePrice = atmCELTP + atmPELTP;
+
+  // 0.85 x straddle ≈ 1-sigma move to expiry. Scale by sqrt(trading days) for a per-day figure.
   const expectedMove = straddlePrice * 0.85;
+  const tradingDaysLeft = Math.max(1, Math.round(dteDays * 5 / 7));
+  const dailyMove = expectedMove / Math.sqrt(tradingDaysLeft);
   const upperRange = spot + expectedMove;
   const lowerRange = spot - expectedMove;
   const expectedMovePct = spot > 0 ? (expectedMove / spot) * 100 : 0;
 
-  if (
-    straddleTracker.expiry !== targetExpiry ||
-    straddleTracker.atm !== atm ||
-    !straddleTracker.openStraddle
-  ) {
-    straddleTracker.expiry = targetExpiry;
-    straddleTracker.atm = atm;
-    straddleTracker.openStraddle = straddlePrice;
-    straddleTracker.highStraddle = straddlePrice;
-    straddleTracker.lowStraddle = straddlePrice;
-    straddleTracker.history = [];
-  }
+  // Stateless day change: NSE gives each leg's change vs previous close, so we can rebuild
+  // yesterday's ATM straddle (at yesterday's ATM strike) and compare like with like.
+  const day = indices?.nifty || null;
+  const prevAtmStrike = day?.previousClose ? Math.round(day.previousClose / 50) * 50 : atm;
+  const prevAtmObj = allExpiryStrikes.find(s => s.strike === prevAtmStrike) || atmStrikeObj;
+  const pCE = prevAtmObj?.CE || {};
+  const pPE = prevAtmObj?.PE || {};
+  const haveChg = typeof pCE.change === 'number' && typeof pPE.change === 'number' && pCE.lastPrice > 0 && pPE.lastPrice > 0;
+  const prevCloseStraddle = haveChg ? (pCE.lastPrice - pCE.change) + (pPE.lastPrice - pPE.change) : null;
+  const straddleDayChgPct = prevCloseStraddle > 0 ? ((straddlePrice - prevCloseStraddle) / prevCloseStraddle) * 100 : 0;
+  const straddleDecayStatus = straddleDayChgPct < -0.5 ? 'DECAYING' : straddleDayChgPct > 0.5 ? 'EXPANDING' : 'STABLE';
 
-  if (straddlePrice > 0) {
-    if (!straddleTracker.openStraddle) straddleTracker.openStraddle = straddlePrice;
-    straddleTracker.highStraddle = Math.max(straddleTracker.highStraddle || straddlePrice, straddlePrice);
-    straddleTracker.lowStraddle = Math.min(straddleTracker.lowStraddle || straddlePrice, straddlePrice);
-  }
+  // Implied future from put-call parity at the ATM strike
+  const impliedFuture = atmCELTP > 0 && atmPELTP > 0 && atmStrikeObj
+    ? atmStrikeObj.strike + (atmCELTP - atmPELTP) * Math.exp(RISK_FREE_RATE * T)
+    : null;
 
-  const straddleOpen = straddleTracker.openStraddle || straddlePrice;
-  const straddleDecayPct = straddleOpen > 0 ? ((straddleOpen - straddlePrice) / straddleOpen) * 100 : 0;
-  const straddleDecayStatus = straddleDecayPct > 0.5 ? 'DECAYING' : straddleDecayPct < -0.5 ? 'EXPANDING' : 'STABLE';
-
+  // ── Near-the-money PCR (±3 strikes) ──
   const atmIndex = strikes.findIndex(s => s.strike === atm);
-  let ntmCallOI = 0;
-  let ntmPutOI = 0;
+  let ntmCallOI = 0, ntmPutOI = 0;
   if (atmIndex !== -1) {
-    const startIndex = Math.max(0, atmIndex - 3);
-    const endIndex = Math.min(strikes.length - 1, atmIndex + 3);
-    for (let i = startIndex; i <= endIndex; i++) {
+    for (let i = Math.max(0, atmIndex - 3); i <= Math.min(strikes.length - 1, atmIndex + 3); i++) {
       ntmCallOI += strikes[i].CE?.openInterest || 0;
       ntmPutOI += strikes[i].PE?.openInterest || 0;
     }
   }
   const ntmPcr = ntmCallOI > 0 ? ntmPutOI / ntmCallOI : 0;
-  const weightedPcr = weightedCallValue > 0 ? weightedPutValue / weightedCallValue : 0;
 
   const resistanceStrength = totalCallOI > 0 ? (maxCallOI / totalCallOI) * 100 : 0;
   const supportStrength = totalPutOI > 0 ? (maxPutOI / totalPutOI) * 100 : 0;
 
+  // ── Volatility ──
   const atmCeIv = atmCE.impliedVolatility || 0;
   const atmPeIv = atmPE.impliedVolatility || 0;
-  const ivSkew = atmPeIv - atmCeIv;
-  const atmIv = (atmCeIv + atmPeIv) / 2;
+  const atmIv = atmCeIv > 0 && atmPeIv > 0 ? (atmCeIv + atmPeIv) / 2 : (atmCeIv || atmPeIv);
+  const rr = computeRiskReversal25(allExpiryStrikes, spot, T);
+  const ivSkew = rr ? rr.value : atmPeIv - atmCeIv;
+  const ivSkewMethod = rr ? '25Δ risk reversal' : 'ATM put-call IV gap';
 
-  // Optimized Max Pain Algorithm
+  // ── Max pain ──
   let maxPain = atm;
   let minTotalPain = Infinity;
   const nStrikes = allExpiryStrikes.length;
-
   if (nStrikes > 0) {
-    const sorted = [...allExpiryStrikes].sort((a, b) => a.strike - b.strike);
     const sumCE_OI = new Float64Array(nStrikes);
     const sumCE_W = new Float64Array(nStrikes);
     const sumPE_OI = new Float64Array(nStrikes);
     const sumPE_W = new Float64Array(nStrikes);
-
-    let runCE_OI = 0, runCE_W = 0;
-    let runPE_OI = 0, runPE_W = 0;
+    let runCE_OI = 0, runCE_W = 0, runPE_OI = 0, runPE_W = 0;
 
     for (let i = 0; i < nStrikes; i++) {
-      const cOI = sorted[i].CE?.openInterest || 0;
-      const pOI = sorted[i].PE?.openInterest || 0;
-      const k = sorted[i].strike;
-
-      runCE_OI += cOI;
-      runCE_W += cOI * k;
-      sumCE_OI[i] = runCE_OI;
-      sumCE_W[i] = runCE_W;
-
-      runPE_OI += pOI;
-      runPE_W += pOI * k;
-      sumPE_OI[i] = runPE_OI;
-      sumPE_W[i] = runPE_W;
+      const cOI = allExpiryStrikes[i].CE?.openInterest || 0;
+      const pOI = allExpiryStrikes[i].PE?.openInterest || 0;
+      const k = allExpiryStrikes[i].strike;
+      runCE_OI += cOI; runCE_W += cOI * k;
+      sumCE_OI[i] = runCE_OI; sumCE_W[i] = runCE_W;
+      runPE_OI += pOI; runPE_W += pOI * k;
+      sumPE_OI[i] = runPE_OI; sumPE_W[i] = runPE_W;
     }
-
     const totalPE_OI = sumPE_OI[nStrikes - 1];
     const totalPE_W = sumPE_W[nStrikes - 1];
 
     for (let i = 0; i < nStrikes; i++) {
-      const K = sorted[i].strike;
-      const callOI_left = i > 0 ? sumCE_OI[i - 1] : 0;
-      const callW_left = i > 0 ? sumCE_W[i - 1] : 0;
-      const callLoss = K * callOI_left - callW_left;
-
-      const putOI_right = totalPE_OI - sumPE_OI[i];
-      const putW_right = totalPE_W - sumPE_W[i];
-      const putLoss = putW_right - K * putOI_right;
-
+      const K = allExpiryStrikes[i].strike;
+      const callLoss = K * (i > 0 ? sumCE_OI[i - 1] : 0) - (i > 0 ? sumCE_W[i - 1] : 0);
+      const putLoss = (totalPE_W - sumPE_W[i]) - K * (totalPE_OI - sumPE_OI[i]);
       const totalPain = callLoss + putLoss;
-      if (totalPain < minTotalPain) {
-        minTotalPain = totalPain;
-        maxPain = K;
-      }
+      if (totalPain < minTotalPain) { minTotalPain = totalPain; maxPain = K; }
     }
   }
 
-  // Black-Scholes GEX
-  const LOT_SIZE = 25;
-  const T = getDTEInYears(targetExpiry);
-
+  // ── Black-Scholes GEX (dealers assumed long calls / short puts — a convention, not observed) ──
   function computeGexForSpot(S) {
-    let totalGex = 0;
-    let callGexTotal = 0;
-    let putGexTotal = 0;
+    let totalGex = 0, callGexTotal = 0, putGexTotal = 0;
     allExpiryStrikes.forEach(s => {
       const cOI = s.CE?.openInterest || 0;
       const pOI = s.PE?.openInterest || 0;
-      const cIv = (s.CE?.impliedVolatility || 0) / 100;
-      const pIv = (s.PE?.impliedVolatility || 0) / 100;
-
-      const cGamma = calculateOptionGamma(S, s.strike, T, cIv);
-      const pGamma = calculateOptionGamma(S, s.strike, T, pIv);
-
+      const cGamma = calculateOptionGamma(S, s.strike, T, (s.CE?.impliedVolatility || 0) / 100);
+      const pGamma = calculateOptionGamma(S, s.strike, T, (s.PE?.impliedVolatility || 0) / 100);
       const callGex = cOI * LOT_SIZE * cGamma * S * S * 0.01;
       const putGex = pOI * LOT_SIZE * pGamma * S * S * 0.01;
-
       callGexTotal += callGex;
       putGexTotal += putGex;
-      totalGex += (callGex - putGex);
+      totalGex += callGex - putGex;
     });
     return { totalGex, callGexTotal, putGexTotal };
   }
@@ -555,63 +605,50 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const totalGexCr = currentGex / 1e7;
   const callGexCr = callGexTotal / 1e7;
   const putGexCr = putGexTotal / 1e7;
+  const zeroGammaLevel = findZeroGamma(S => computeGexForSpot(S).totalGex, spot, Math.max(1000, atm - 1500), atm + 1500, 10);
 
-  let zeroGammaLevel = atm;
-  let minGexAbs = Infinity;
-  const startSpot = Math.max(1000, atm - 1500);
-  const endSpot = atm + 1500;
-
-  for (let sPrice = startSpot; sPrice <= endSpot; sPrice += 10) {
-    const gVal = Math.abs(computeGexForSpot(sPrice).totalGex);
-    if (gVal < minGexAbs) {
-      minGexAbs = gVal;
-      zeroGammaLevel = sPrice;
-    }
-  }
-
-  // Calculate Option Greeks for display strikes
   strikes.forEach(s => {
-    if (s.CE) {
-      const cIv = (s.CE.impliedVolatility || 0) / 100;
-      s.CE.greeks = calculateOptionGreeks(spot, s.strike, T, cIv, true);
-    }
-    if (s.PE) {
-      const pIv = (s.PE.impliedVolatility || 0) / 100;
-      s.PE.greeks = calculateOptionGreeks(spot, s.strike, T, pIv, false);
-    }
+    if (s.CE) s.CE.greeks = calculateOptionGreeks(spot, s.strike, T, (s.CE.impliedVolatility || 0) / 100, true);
+    if (s.PE) s.PE.greeks = calculateOptionGreeks(spot, s.strike, T, (s.PE.impliedVolatility || 0) / 100, false);
   });
 
-  // CPR Calculation
-  const estHigh = Math.max(maxCallOIStrike, Math.round(upperRange));
-  const estLow = Math.min(maxPutOIStrike, Math.round(lowerRange));
-  const estClose = spot;
-
-  const pivot = (estHigh + estLow + estClose) / 3;
-  const bc = (estHigh + estLow) / 2;
-  const tc = (pivot - bc) + pivot;
-  const cprWidth = Math.abs(tc - bc);
-  const cprWidthPct = (cprWidth / spot) * 100;
-
-  const r1 = (2 * pivot) - estLow;
-  const s1 = (2 * pivot) - estHigh;
-  const r2 = pivot + (estHigh - estLow);
-  const s2 = pivot - (estHigh - estLow);
-
-  const volatilityRegime = await computeVolatilityRegime(atmIv, pool);
-  const cprTypeVal = cprWidthPct < 0.25 ? 'NARROW' : cprWidthPct > 0.6 ? 'WIDE' : 'AVERAGE';
+  // ── CPR / pivots: previous session's real H/L/C; OI-wall estimate only as a labelled fallback ──
+  let cprInput;
+  let cprSource;
+  if (pivotBasis) {
+    cprInput = { high: pivotBasis.high, low: pivotBasis.low, close: pivotBasis.close };
+    cprSource = 'PREV_SESSION';
+  } else {
+    cprInput = {
+      high: Math.max(maxCallOIStrike, Math.round(upperRange)),
+      low: Math.min(maxPutOIStrike, Math.round(lowerRange)),
+      close: spot
+    };
+    cprSource = 'OI_ESTIMATE';
+  }
+  const cprCalc = computeCPR(cprInput.high, cprInput.low, cprInput.close, spot);
+  const cprTypeVal = classifyCPR(cprCalc.widthPct);
   const gexRegimeVal = totalGexCr >= 0 ? 'POSITIVE_GAMMA' : 'NEGATIVE_GAMMA';
+
+  const volatilityRegime = await computeVolatilityRegime(atmIv, pool, indices?.vix || null);
   const compositeRegime = computeCompositeRegime(gexRegimeVal, pcr, cprTypeVal, ivSkew, spot, maxPain);
   const impliedProbability = computeImpliedProbabilityDistribution(allExpiryStrikes, spot, T);
-  const mlPredictions = computeIntradayMLPredictions(spot, maxPain, zeroGammaLevel, totalGexCr, pcr, ivSkew, cprTypeVal, unusualFlowAlerts.length);
+  const mlPredictions = computeIntradayMLPredictions(
+    spot, maxPain, zeroGammaLevel, totalGexCr, pcr, ivSkew, cprTypeVal, unusualFlowAlerts.length, { dteDays }
+  );
+
+  const r1 = n => Number(n.toFixed(1));
 
   const result = {
     spot,
     atm,
     expiry: targetExpiry,
     allExpiries,
+    dteDays: Number(dteDays.toFixed(2)),
+    dataAsOf: parseNseTimestamp(raw.records.timestamp),
     pcr: Number(pcr.toFixed(2)),
     ntmPcr: Number(ntmPcr.toFixed(2)),
-    weightedPcr: Number(weightedPcr.toFixed(2)),
+    volPcr: Number(volPcr.toFixed(2)),
     straddlePrice: Number(straddlePrice.toFixed(2)),
     upperRange: Number(upperRange.toFixed(2)),
     lowerRange: Number(lowerRange.toFixed(2)),
@@ -622,43 +659,54 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
       straddlePrice: Number(straddlePrice.toFixed(2)),
       expectedMove: Number(expectedMove.toFixed(2)),
       expectedMovePct: Number(expectedMovePct.toFixed(2)),
+      dailyMove: Number(dailyMove.toFixed(1)),
+      tradingDaysLeft,
       upperRange: Number(upperRange.toFixed(2)),
       lowerRange: Number(lowerRange.toFixed(2)),
-      openStraddle: Number(straddleOpen.toFixed(2)),
-      highStraddle: Number((straddleTracker.highStraddle || straddlePrice).toFixed(2)),
-      lowStraddle: Number((straddleTracker.lowStraddle || straddlePrice).toFixed(2)),
-      decayPct: Number(straddleDecayPct.toFixed(2)),
+      prevCloseStraddle: prevCloseStraddle !== null ? Number(prevCloseStraddle.toFixed(2)) : null,
+      decayPct: Number(straddleDayChgPct.toFixed(2)),
       decayStatus: straddleDecayStatus
     },
+    impliedFuture: impliedFuture !== null ? Number(impliedFuture.toFixed(1)) : null,
+    basis: impliedFuture !== null ? Number((impliedFuture - spot).toFixed(1)) : null,
     resistanceStrength: Number(resistanceStrength.toFixed(1)),
     supportStrength: Number(supportStrength.toFixed(1)),
     ivSkew: Number(ivSkew.toFixed(2)),
+    ivSkewMethod,
+    ivSkewDetail: rr ? { putStrike: rr.putStrike, callStrike: rr.callStrike, putIv: Number(rr.putIv.toFixed(1)), callIv: Number(rr.callIv.toFixed(1)) } : null,
     atmIv: Number(atmIv.toFixed(2)),
+    vix: indices?.vix ? { last: indices.vix.last, previousClose: indices.vix.previousClose, percentChange: indices.vix.percentChange } : null,
+    day: day ? { open: day.open, high: day.high, low: day.low, previousClose: day.previousClose, percentChange: day.percentChange } : null,
     volatilityRegime,
     compositeRegime,
     impliedProbability,
     mlPredictions,
     unusualActivity: unusualFlowAlerts,
     maxPain,
+    walls,
     gex: {
       totalGexCr: Number(totalGexCr.toFixed(2)),
       callGexCr: Number(callGexCr.toFixed(2)),
       putGexCr: Number(putGexCr.toFixed(2)),
       zeroGammaLevel,
       gexRegime: gexRegimeVal,
-      distToZeroGamma: Number((spot - zeroGammaLevel).toFixed(1))
+      distToZeroGamma: zeroGammaLevel !== null ? Number((spot - zeroGammaLevel).toFixed(1)) : null,
+      lotSize: LOT_SIZE
     },
     cpr: {
-      pivot: Number(pivot.toFixed(1)),
-      tc: Number(tc.toFixed(1)),
-      bc: Number(bc.toFixed(1)),
-      cprWidth: Number(cprWidth.toFixed(1)),
-      cprWidthPct: Number(cprWidthPct.toFixed(2)),
+      pivot: r1(cprCalc.pivot),
+      tc: r1(cprCalc.tc),
+      bc: r1(cprCalc.bc),
+      cprWidth: r1(cprCalc.width),
+      cprWidthPct: Number(cprCalc.widthPct.toFixed(2)),
       cprType: cprTypeVal,
-      r1: Number(r1.toFixed(1)),
-      r2: Number(r2.toFixed(1)),
-      s1: Number(s1.toFixed(1)),
-      s2: Number(s2.toFixed(1))
+      r1: r1(cprCalc.r1),
+      r2: r1(cprCalc.r2),
+      s1: r1(cprCalc.s1),
+      s2: r1(cprCalc.s2),
+      source: cprSource,
+      basisDate: pivotBasis?.date || null,
+      basis: cprInput
     },
     totalCallOI,
     totalPutOI,
@@ -670,239 +718,230 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
     fetchedAt: new Date().toISOString()
   };
 
-  cache = {
-    data: result,
-    ts: now,
-    expiry: targetExpiry
-  };
-
+  cache = { data: result, ts: now, expiry: targetExpiry };
   saveSnapshotsAsync(strikes, targetExpiry, result.fetchedAt);
   return result;
 }
 
-function computeImpliedProbabilityDistribution(allStrikes, spot, T, r = 0.065) {
-  if (!allStrikes || allStrikes.length < 3 || !spot || spot <= 0) {
-    return {
-      modeStrike: spot,
-      confidence68: { lower: Math.round(spot * 0.99), upper: Math.round(spot * 1.01) },
-      confidence95: { lower: Math.round(spot * 0.98), upper: Math.round(spot * 1.02) },
-      stayProbabilityPct: 68.0,
-      distribution: []
-    };
+// ── Market-implied distribution (Breeden-Litzenberger on a *fitted* IV smile) ──
+// Differentiating raw per-strike prices twice amplifies IV noise (spiky densities, fat fake tails),
+// so fit a smooth quadratic smile to OTM IVs first, then take the second derivative of model prices.
+
+function bsCall(S, K, T, iv, r) {
+  const sqrtT = Math.sqrt(T);
+  const d1 = (Math.log(S / K) + (r + 0.5 * iv * iv) * T) / (iv * sqrtT);
+  return S * normalCdf(d1) - K * Math.exp(-r * T) * normalCdf(d1 - iv * sqrtT);
+}
+
+function solve3(A, b) {
+  const m = A.map((row, i) => [...row, b[i]]);
+  for (let i = 0; i < 3; i++) {
+    let piv = i;
+    for (let j = i + 1; j < 3; j++) if (Math.abs(m[j][i]) > Math.abs(m[piv][i])) piv = j;
+    [m[i], m[piv]] = [m[piv], m[i]];
+    if (Math.abs(m[i][i]) < 1e-12) return null;
+    for (let j = i + 1; j < 3; j++) {
+      const f = m[j][i] / m[i][i];
+      for (let k = i; k < 4; k++) m[j][k] -= f * m[i][k];
+    }
   }
-
-  const minStrike = spot * 0.92;
-  const maxStrike = spot * 1.08;
-  const filtered = allStrikes.filter(s => s.strike >= minStrike && s.strike <= maxStrike);
-  const sorted = [...(filtered.length >= 5 ? filtered : allStrikes)].sort((a, b) => a.strike - b.strike);
-  const n = sorted.length;
-
-  if (n < 3) {
-    return {
-      modeStrike: spot,
-      confidence68: { lower: Math.round(spot * 0.99), upper: Math.round(spot * 1.01) },
-      confidence95: { lower: Math.round(spot * 0.98), upper: Math.round(spot * 1.02) },
-      stayProbabilityPct: 68.0,
-      distribution: []
-    };
+  const x = [0, 0, 0];
+  for (let i = 2; i >= 0; i--) {
+    let sum = m[i][3];
+    for (let j = i + 1; j < 3; j++) sum -= m[i][j] * x[j];
+    x[i] = sum / m[i][i];
   }
+  return x;
+}
 
-  const rawIvs = sorted.map(s => {
-    const cIv = (s.CE?.impliedVolatility || 0) / 100;
-    const pIv = (s.PE?.impliedVolatility || 0) / 100;
-    if (cIv > 0 && pIv > 0) return (cIv + pIv) / 2;
-    if (cIv > 0) return cIv;
-    if (pIv > 0) return pIv;
-    return 0;
+function fitSmile(points) {
+  // weighted LS: iv = a + b*k + c*k^2
+  const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const Y = [0, 0, 0];
+  points.forEach(({ k, iv, w }) => {
+    const row = [1, k, k * k];
+    for (let i = 0; i < 3; i++) {
+      Y[i] += w * row[i] * iv;
+      for (let j = 0; j < 3; j++) S[i][j] += w * row[i] * row[j];
+    }
   });
+  return solve3(S, Y);
+}
 
-  const validIvs = rawIvs.filter(v => v > 0);
-  const meanIv = validIvs.length > 0 ? validIvs.reduce((a, b) => a + b, 0) / validIvs.length : 0.15;
-
-  const smoothedIvs = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const prev = rawIvs[Math.max(0, i - 1)] || meanIv;
-    const curr = rawIvs[i] || meanIv;
-    const next = rawIvs[Math.min(n - 1, i + 1)] || meanIv;
-    smoothedIvs[i] = (prev + 2 * curr + next) / 4;
-  }
-
-  const prices = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const K = sorted[i].strike;
-    const iv = smoothedIvs[i] > 0 ? smoothedIvs[i] : meanIv;
-    if (T > 0 && iv > 0) {
-      const d1 = (Math.log(spot / K) + (r + 0.5 * iv * iv) * T) / (iv * Math.sqrt(T));
-      const d2 = d1 - iv * Math.sqrt(T);
-      prices[i] = spot * normalCdf(d1) - K * Math.exp(-r * T) * normalCdf(d2);
-    } else {
-      prices[i] = Math.max(0, spot - K);
-    }
-  }
-
-  const rawProb = new Float64Array(n);
-  const discFactor = Math.exp(r * T);
-
-  for (let i = 1; i < n - 1; i++) {
-    const K_prev = sorted[i - 1].strike;
-    const K_curr = sorted[i].strike;
-    const K_next = sorted[i + 1].strike;
-
-    const dK1 = K_curr - K_prev;
-    const dK2 = K_next - K_curr;
-    const avgdK = (dK1 + dK2) / 2;
-
-    if (dK1 <= 0 || dK2 <= 0) continue;
-
-    const dC_dK2 = (prices[i + 1] - prices[i]) / dK2;
-    const dC_dK1 = (prices[i] - prices[i - 1]) / dK1;
-    const secondDeriv = (dC_dK2 - dC_dK1) / avgdK;
-
-    rawProb[i] = Math.max(0, discFactor * secondDeriv * avgdK);
-  }
-
-  const smoothProb = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    const p1 = rawProb[Math.max(0, i - 1)];
-    const p2 = rawProb[i];
-    const p3 = rawProb[Math.min(n - 1, i + 1)];
-    smoothProb[i] = p1 * 0.2 + p2 * 0.6 + p3 * 0.2;
-  }
-
-  let sumProb = 0;
-  for (let i = 0; i < n; i++) sumProb += smoothProb[i];
-
-  if (sumProb === 0) {
-    for (let i = 0; i < n; i++) {
-      const z = (sorted[i].strike - spot) / (spot * 0.015);
-      smoothProb[i] = normalPdf(z);
-      sumProb += smoothProb[i];
-    }
-  }
-
-  const distribution = [];
-  let maxProb = -1;
-  let modeStrike = spot;
-  let runningCdf = 0;
-
-  let k16 = sorted[0].strike;
-  let k84 = sorted[n - 1].strike;
-  let k2_5 = sorted[0].strike;
-  let k97_5 = sorted[n - 1].strike;
-
-  let stayProbSum = 0;
-  const lowerRangeBound = spot * 0.985;
-  const upperRangeBound = spot * 1.015;
-
-  for (let i = 0; i < n; i++) {
-    const probPct = Number(((smoothProb[i] / sumProb) * 100).toFixed(2));
-    runningCdf += probPct / 100;
-    const K = sorted[i].strike;
-
-    if (probPct > maxProb) {
-      maxProb = probPct;
-      modeStrike = K;
-    }
-
-    if (runningCdf >= 0.025 && k2_5 === sorted[0].strike) k2_5 = K;
-    if (runningCdf >= 0.16 && k16 === sorted[0].strike) k16 = K;
-    if (runningCdf >= 0.84 && k84 === sorted[n - 1].strike) k84 = K;
-    if (runningCdf >= 0.975 && k97_5 === sorted[n - 1].strike) k97_5 = K;
-
-    if (K >= lowerRangeBound && K <= upperRangeBound) {
-      stayProbSum += probPct;
-    }
-
-    distribution.push({
-      strike: K,
-      probabilityPct: probPct,
-      cdfPct: Number((runningCdf * 100).toFixed(1))
-    });
-  }
-
+function lognormalFallback(spot, iv, T) {
+  const sd = spot * iv * Math.sqrt(T);
   return {
-    modeStrike,
-    confidence68: { lower: k16, upper: k84 },
-    confidence95: { lower: k2_5, upper: k97_5 },
-    stayProbabilityPct: Number(Math.min(99.9, stayProbSum).toFixed(1)),
-    distribution
+    modeStrike: Math.round(spot),
+    confidence68: { lower: Math.round(spot - sd), upper: Math.round(spot + sd) },
+    confidence95: { lower: Math.round(spot - 2 * sd), upper: Math.round(spot + 2 * sd) },
+    stayProbabilityPct: Number((Math.min(99.9, (normalCdf(0.015 * spot / sd) - normalCdf(-0.015 * spot / sd)) * 100)).toFixed(1)),
+    distribution: [],
+    method: 'LOGNORMAL_FALLBACK'
   };
 }
 
+function computeImpliedProbabilityDistribution(allStrikes, spot, T, r = RISK_FREE_RATE) {
+  if (!allStrikes || allStrikes.length < 3 || !spot || spot <= 0 || !(T > 0)) {
+    return lognormalFallback(spot || 0, 0.15, T > 0 ? T : 1 / 365);
+  }
 
-function computeIntradayMLPredictions(spot, maxPain, zeroGammaLevel, gexTotalCr, pcr, ivSkew, cprType, unusualCount) {
-  const gexRatio = Math.max(-1, Math.min(1, gexTotalCr / 50));
-  const distZeroGammaPct = zeroGammaLevel > 0 ? ((spot - zeroGammaLevel) / spot) * 100 : 0;
+  const F = spot * Math.exp(r * T);
+  const points = [];
+  allStrikes.forEach(s => {
+    if (s.strike < spot * 0.9 || s.strike > spot * 1.1) return;
+    const cIv = (s.CE?.impliedVolatility || 0) / 100;
+    const pIv = (s.PE?.impliedVolatility || 0) / 100;
+    // OTM options carry the cleanest IV: puts below the forward, calls above
+    const iv = s.strike < F ? (pIv || cIv) : (cIv || pIv);
+    if (iv > 0.01 && iv < 3) {
+      const oi = s.strike < F ? (s.PE?.openInterest || 0) : (s.CE?.openInterest || 0);
+      points.push({ k: Math.log(s.strike / F), iv, w: 1 + Math.sqrt(oi) / 50 });
+    }
+  });
+
+  const meanIv = points.length ? points.reduce((a, p) => a + p.iv, 0) / points.length : 0.15;
+  if (points.length < 5) return lognormalFallback(spot, meanIv, T);
+
+  const coef = fitSmile(points);
+  if (!coef) return lognormalFallback(spot, meanIv, T);
+  const minIv = Math.min(...points.map(p => p.iv));
+  const maxIv = Math.max(...points.map(p => p.iv));
+  const ivAt = K => {
+    const k = Math.log(K / F);
+    return Math.min(maxIv * 1.5, Math.max(minIv * 0.6, coef[0] + coef[1] * k + coef[2] * k * k));
+  };
+
+  const diffs = [];
+  for (let i = 1; i < allStrikes.length; i++) diffs.push(allStrikes[i].strike - allStrikes[i - 1].strike);
+  diffs.sort((a, b) => a - b);
+  const h = diffs[Math.floor(diffs.length / 2)] || 50;
+
+  const lo = Math.floor((spot * 0.88) / h) * h;
+  const hi = Math.ceil((spot * 1.12) / h) * h;
+  const grid = [];
+  for (let K = lo; K <= hi; K += h) grid.push(K);
+
+  const price = K => bsCall(spot, K, T, ivAt(K), r);
+  const disc = Math.exp(r * T);
+  const mass = grid.map(K => Math.max(0, disc * (price(K + h) - 2 * price(K) + price(K - h)) / (h * h)) * h);
+  const total = mass.reduce((a, b) => a + b, 0);
+  if (!(total > 0)) return lognormalFallback(spot, meanIv, T);
+
+  const cdf = [];
+  let run = 0;
+  const probs = mass.map(m => m / total);
+  probs.forEach(p => { run += p; cdf.push(run); });
+
+  const quantile = q => {
+    for (let i = 0; i < grid.length; i++) {
+      if (cdf[i] >= q) {
+        if (i === 0) return grid[0];
+        const frac = (q - cdf[i - 1]) / (cdf[i] - cdf[i - 1] || 1);
+        return grid[i - 1] + frac * (grid[i] - grid[i - 1]);
+      }
+    }
+    return grid[grid.length - 1];
+  };
+  const cdfAt = x => {
+    if (x <= grid[0]) return 0;
+    if (x >= grid[grid.length - 1]) return 1;
+    for (let i = 1; i < grid.length; i++) {
+      if (x <= grid[i]) return cdf[i - 1] + (x - grid[i - 1]) / (grid[i] - grid[i - 1]) * (cdf[i] - cdf[i - 1]);
+    }
+    return 1;
+  };
+
+  let modeIdx = 0;
+  probs.forEach((p, i) => { if (p > probs[modeIdx]) modeIdx = i; });
+  const round = x => Math.round(x / 10) * 10;
+
+  const distribution = grid
+    .map((K, i) => ({ strike: K, probabilityPct: Number((probs[i] * 100).toFixed(2)), cdfPct: Number((cdf[i] * 100).toFixed(1)) }))
+    .filter(d => d.strike >= spot * 0.92 && d.strike <= spot * 1.08);
+
+  return {
+    modeStrike: grid[modeIdx],
+    confidence68: { lower: round(quantile(0.16)), upper: round(quantile(0.84)) },
+    confidence95: { lower: round(quantile(0.025)), upper: round(quantile(0.975)) },
+    stayProbabilityPct: Number((Math.min(99.9, (cdfAt(spot * 1.015) - cdfAt(spot * 0.985)) * 100)).toFixed(1)),
+    distribution,
+    method: 'SMILE_FIT_BL'
+  };
+}
+
+/**
+ * Hand-weighted scoring model (NOT trained on data). Outputs are relative scores,
+ * not calibrated probabilities.
+ */
+function computeIntradayMLPredictions(spot, maxPain, zeroGammaLevel, gexTotalCr, pcr, ivSkew, cprType, unusualCount, opts = {}) {
+  const dteDays = opts.dteDays !== undefined ? opts.dteDays : 1;
+  const clamp = (x, lo = -1, hi = 1) => Math.max(lo, Math.min(hi, x));
+
+  const distZeroGammaPct = zeroGammaLevel ? ((spot - zeroGammaLevel) / spot) * 100 : null;
   const distMaxPainPct = maxPain > 0 ? ((spot - maxPain) / spot) * 100 : 0;
-  const pcrNormalized = Math.max(-1, Math.min(1, (pcr - 1.0) / 0.5));
-  const skewNormalized = Math.max(-1, Math.min(1, ivSkew / 3.0));
+  const pcrNorm = clamp((pcr - 1.0) / 0.5);              // high PCR = put writing = supportive
+  const skewNorm = clamp(ivSkew / 3.0);                  // put-rich skew = hedging = cautious
+  // Max-pain gravity: spot ABOVE max pain pulls down, below pulls up; matters most near expiry
+  const painPull = clamp(-distMaxPainPct / 1.0) * (dteDays <= 2 ? 0.4 : 0.15);
 
-  const zBull = 0.5 + (0.85 * pcrNormalized) + (0.6 * gexRatio) + (0.4 * distMaxPainPct) - (0.35 * skewNormalized);
-  const zBear = 0.5 - (0.85 * pcrNormalized) - (0.6 * gexRatio) - (0.4 * distMaxPainPct) + (0.35 * skewNormalized);
-  const zNeut = 0.3 + (1.2 * (1 - Math.abs(pcrNormalized))) + (0.8 * (cprType === 'WIDE' ? 1 : 0));
+  const zBull = 0.4 + 0.85 * pcrNorm - 0.35 * skewNorm + painPull;
+  const zBear = 0.4 - 0.85 * pcrNorm + 0.35 * skewNorm - painPull;
+  // Positive gamma and wide CPR both argue for "no trend"
+  const zNeut = 0.3 + 1.2 * (1 - Math.abs(pcrNorm)) + 0.8 * (cprType === 'WIDE' ? 1 : 0) + 0.6 * (gexTotalCr >= 0 ? 1 : 0);
 
-  const expBull = Math.exp(zBull);
-  const expBear = Math.exp(zBear);
-  const expNeut = Math.exp(zNeut);
-  const sumExp = expBull + expBear + expNeut;
-
-  const bullishPct = Number(((expBull / sumExp) * 100).toFixed(1));
-  const bearishPct = Number(((expBear / sumExp) * 100).toFixed(1));
-  const neutralPct = Number(((expNeut / sumExp) * 100).toFixed(1));
+  const eB = Math.exp(zBull), eR = Math.exp(zBear), eN = Math.exp(zNeut);
+  const sumExp = eB + eR + eN;
+  const bullishPct = Number(((eB / sumExp) * 100).toFixed(1));
+  const bearishPct = Number(((eR / sumExp) * 100).toFixed(1));
+  const neutralPct = Number(((eN / sumExp) * 100).toFixed(1));
 
   let directionalSignal = 'NEUTRAL / RANGEBOUND';
-  let primarySignalClass = 'warn';
+  let signalClass = 'warn';
   if (bullishPct >= 45 && bullishPct > bearishPct) {
-    directionalSignal = 'BULLISH CONTINUATION (+0.3% expected in 15-30m)';
-    primarySignalClass = 'bull';
+    directionalSignal = 'BULLISH LEAN';
+    signalClass = 'bull';
   } else if (bearishPct >= 45 && bearishPct > bullishPct) {
-    directionalSignal = 'BEARISH PRESSURE (-0.3% expected in 15-30m)';
-    primarySignalClass = 'bear';
+    directionalSignal = 'BEARISH LEAN';
+    signalClass = 'bear';
   }
 
-  let breakoutLogits = 0;
-  if (gexTotalCr < 0) breakoutLogits += 1.8;
-  if (cprType === 'NARROW') breakoutLogits += 1.5;
-  if (Math.abs(distZeroGammaPct) < 0.25) breakoutLogits += 1.2;
-  if (unusualCount > 0) breakoutLogits += 0.8;
+  let breakout = 0;
+  if (gexTotalCr < 0) breakout += 1.8;
+  if (cprType === 'NARROW') breakout += 1.5;
+  if (distZeroGammaPct !== null && Math.abs(distZeroGammaPct) < 0.25) breakout += 1.2;
+  if (unusualCount > 0) breakout += 0.8;
 
-  let rangeboundLogits = 1.0;
-  if (gexTotalCr >= 0) rangeboundLogits += 1.6;
-  if (cprType === 'WIDE') rangeboundLogits += 1.4;
+  let range = 1.0;
+  if (gexTotalCr >= 0) range += 1.6;
+  if (cprType === 'WIDE') range += 1.4;
 
-  const expBreakout = Math.exp(breakoutLogits);
-  const expRangebound = Math.exp(rangeboundLogits);
-  const sumStateExp = expBreakout + expRangebound;
+  // 0.6 temperature keeps hand-set logits from saturating at 1% / 99%
+  const eBo = Math.exp(breakout * 0.6);
+  const eRa = Math.exp(range * 0.6);
+  const breakoutProbPct = Number(((eBo / (eBo + eRa)) * 100).toFixed(1));
+  const rangeboundProbPct = Number(((eRa / (eBo + eRa)) * 100).toFixed(1));
 
-  const breakoutProbPct = Number(((expBreakout / sumStateExp) * 100).toFixed(1));
-  const rangeboundProbPct = Number(((expRangebound / sumStateExp) * 100).toFixed(1));
-
-  let marketStateLabel = 'RANGEBOUND REVERSION';
-  if (breakoutProbPct >= 60) {
-    marketStateLabel = 'HIGH VOLATILITY BREAKOUT';
-  } else if (breakoutProbPct >= 45) {
-    marketStateLabel = 'BALANCED / CONDITIONAL BREAKOUT';
-  }
+  let stateLabel = 'RANGEBOUND REVERSION';
+  if (breakoutProbPct >= 60) stateLabel = 'HIGH VOLATILITY BREAKOUT';
+  else if (breakoutProbPct >= 45) stateLabel = 'BALANCED / CONDITIONAL BREAKOUT';
 
   return {
     directionalTrend: {
-      bullishPct,
-      neutralPct,
-      bearishPct,
+      bullishPct, neutralPct, bearishPct,
       signal: directionalSignal,
-      signalClass: primarySignalClass,
+      signalClass,
       confidence: Math.max(bullishPct, bearishPct, neutralPct)
     },
     marketState: {
       breakoutProbPct,
       rangeboundProbPct,
-      stateLabel: marketStateLabel,
+      stateLabel,
       isHighVol: breakoutProbPct >= 60
     },
     featuresUsed: [
       `PCR: ${pcr.toFixed(2)}`,
       `Net GEX: ${gexTotalCr.toFixed(1)} Cr`,
-      `Zero Gamma: ${zeroGammaLevel}`,
+      `Zero Gamma: ${zeroGammaLevel ?? 'n/a'}`,
       `CPR: ${cprType}`
     ]
   };
@@ -913,6 +952,10 @@ function getCacheData() {
 }
 
 module.exports = {
+  computeCPR,
+  classifyCPR,
+  findZeroGamma,
+  computeRiskReversal25,
   calculateOptionGamma,
   calculateOptionGreeks,
   normalPdf,

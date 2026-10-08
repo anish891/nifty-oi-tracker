@@ -47,24 +47,24 @@ export function buildupSingle(chgOI, chgPrice, isCall) {
   return priceUp ? { label: 'SHORT COV', cls: 'bd-sc' } : { label: 'LONG UNWD', cls: 'bd-lu' };
 }
 
-export function getSmoothedBuildup(strike, currentOI, currentPrice, isCall) {
+export function getSmoothedBuildup(strike, currentOI, currentPrice, isCall, dayOiChg = 0, dayPriceChg = 0) {
   updateTickHistory(strike, currentOI, currentPrice, isCall);
 
   const history = isCall ? tickHistory.CE[strike] : tickHistory.PE[strike];
-  if (!history || history.length < 2) {
-    return buildupSingle(currentOI, 0, isCall);
+
+  // Intraday trend over the last few distinct snapshots, when there is one
+  if (history && history.length >= 2) {
+    const oldest = history[0];
+    const newest = history[history.length - 1];
+    const oiTrend = newest.oi - oldest.oi;
+    const priceTrend = newest.price - oldest.price;
+    if (oiTrend !== 0 || priceTrend !== 0) return buildupSingle(oiTrend, priceTrend, isCall);
   }
 
-  const oldest = history[0];
-  const newest = history[history.length - 1];
-
-  const netOIChange = newest.oi - oldest.oi;
-  const netPriceChange = newest.price - oldest.price;
-
-  const oiTrend = netOIChange !== 0 ? netOIChange : (currentOI - (history[history.length - 2]?.oi || currentOI));
-  const priceTrend = netPriceChange !== 0 ? netPriceChange : (currentPrice - (history[history.length - 2]?.price || currentPrice));
-
-  return buildupSingle(oiTrend, priceTrend, isCall);
+  // Otherwise classify on the day's change (NSE: OI change vs prev close, price change vs prev close).
+  // Never default to "LONG BUILD" just because nothing has moved yet.
+  if (dayOiChg === 0 && dayPriceChg === 0) return { label: '—', cls: '' };
+  return buildupSingle(dayOiChg, dayPriceChg, isCall);
 }
 
 let pdfChartInstance = null;

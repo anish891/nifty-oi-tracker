@@ -14,6 +14,6 @@ export async function fetchOptionChainData(selectedExpiry = null) {
 export async function fetchSimilarSessionsData() {
   const r = await fetch('/api/similar-sessions');
   const json = await r.json();
-  if (!json.ok || !json.topMatches) return [];
-  return json.topMatches;
+  if (!json.ok || !json.topMatches) return { topMatches: [], reason: json.error };
+  return { topMatches: json.topMatches, reason: json.reason };
 }

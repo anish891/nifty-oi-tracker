@@ -121,14 +121,25 @@ function calculateCPR(H, L, C) {
   return { pivot, tc, bc, width };
 }
 
-const { calculateOptionGreeks, computeImpliedProbabilityDistribution, computeIntradayMLPredictions } = require('./services/analytics');
+const {
+  calculateOptionGreeks, computeImpliedProbabilityDistribution, computeIntradayMLPredictions,
+  computeCPR, classifyCPR, findZeroGamma, computeRiskReversal25, computeCompositeRegime,
+  updateWelfordZScore, updateAndDetectUnusualFlow
+} = require('./services/analytics');
 
-const cprRes = calculateCPR(24100, 23900, 24000);
+// Symmetric day: pivot == BC == TC, zero width
+const cprRes = computeCPR(24100, 23900, 24000);
 assert.strictEqual(cprRes.pivot, 24000);
 assert.strictEqual(cprRes.bc, 24000);
 assert.strictEqual(cprRes.tc, 24000);
 assert.strictEqual(cprRes.width, 0);
-console.log('✓ Test 3 Passed: Central Pivot Range (CPR) formulas are verified.');
+// Close near the low pulls pivot below the midpoint: TC must still be >= BC
+const cprSkew = computeCPR(22717.65, 22546.3, 22603.05);
+assert(cprSkew.tc >= cprSkew.bc, 'TC must never be below BC');
+assert(Math.abs(cprSkew.pivot - 22622.33) < 0.01, 'pivot = (H+L+C)/3');
+assert.strictEqual(classifyCPR(cprSkew.widthPct), 'NARROW');
+assert(cprSkew.r1 > cprSkew.pivot && cprSkew.s1 < cprSkew.pivot, 'R1 above / S1 below pivot');
+console.log('✓ Test 3 Passed: CPR (real function) — ordering, pivot, classification verified.');
 
 // ── TEST 4: BLACK-SCHOLES OPTION GREEKS ENGINE VERIFICATION ──
 const callGreeks = calculateOptionGreeks(24000, 24000, 7 / 365, 0.15, true);
@@ -141,7 +152,7 @@ assert(callGreeks.theta < 0, `Theta (${callGreeks.theta}) should be negative (ti
 
 console.log('✓ Test 4 Passed: Black-Scholes Option Greeks Engine (Delta, Gamma, Vega, Theta) verified successfully.');
 
-// ── TEST 5: ATM STRADDLE PRICE & EXPECTED DAY MOVE (0.85x) VERIFICATION ──
+// ── TEST 5: STRADDLE → EXPECTED MOVE ARITHMETIC (0.85x of straddle ≈ 1σ to expiry) ──
 const spot = 24000;
 const ceLtp = 120;
 const peLtp = 100;
@@ -188,5 +199,72 @@ assert(mlRes.directionalTrend.bullishPct > mlRes.directionalTrend.bearishPct, 'H
 assert(mlRes.marketState.breakoutProbPct > 50, 'Negative Gamma & Narrow CPR should signal higher breakout probability');
 
 console.log('✓ Test 7 Passed: Intraday ML Trend & Breakout Prediction Engine verified successfully.');
+
+// ── TEST 8: PDF recovers a known lognormal when the smile is flat ──
+{
+  const S = 24000, T = 5 / 365, iv = 0.15;
+  const strikes = [];
+  for (let K = 22000; K <= 26000; K += 50) strikes.push({ strike: K, CE: { impliedVolatility: 15, openInterest: 1000 }, PE: { impliedVolatility: 15, openInterest: 1000 } });
+  const res = computeImpliedProbabilityDistribution(strikes, S, T);
+  const sd = S * iv * Math.sqrt(T);
+  assert.strictEqual(res.method, 'SMILE_FIT_BL');
+  assert(Math.abs((res.confidence68.upper - res.confidence68.lower) / 2 - sd) < sd * 0.12, `68% half-width should ≈ 1σ (${sd.toFixed(0)}), got ${(res.confidence68.upper - res.confidence68.lower) / 2}`);
+  const sum = res.distribution.reduce((a, d) => a + d.probabilityPct, 0);
+  assert(sum > 97 && sum <= 100.5, `visible mass should be ~100%, got ${sum}`);
+  console.log('✓ Test 8 Passed: implied PDF recovers lognormal width (±1σ) from a flat smile.');
+}
+
+// ── TEST 9: zero-gamma is a real sign flip, null when none ──
+{
+  const flip = findZeroGamma(S => (S - 24050) * 1e6, 24000, 23000, 25000, 10);
+  assert(Math.abs(flip - 24050) <= 1, `zero-gamma should be ~24050, got ${flip}`);
+  assert.strictEqual(findZeroGamma(S => 5e6 + S, 24000, 23000, 25000, 10), null);
+  const two = findZeroGamma(S => (S - 23500) * (S - 24400), 24000, 23000, 25000, 10); // flips at both ends
+  assert(two === 23500 || two === 24400, 'picks the crossing nearest spot');
+  console.log('✓ Test 9 Passed: zero-gamma finds true sign flips (and null when GEX never crosses).');
+}
+
+// ── TEST 10: 25Δ risk reversal sign & selection ──
+{
+  const S = 24000, T = 7 / 365;
+  const strikes = [];
+  for (let K = 23000; K <= 25000; K += 100) {
+    // Put wing richer than call wing
+    strikes.push({ strike: K, CE: { impliedVolatility: 14 }, PE: { impliedVolatility: K < S ? 17 : 14 } });
+  }
+  const rr = computeRiskReversal25(strikes, S, T);
+  assert(rr && rr.value > 2.5 && rr.value < 3.5, `RR should be ~+3, got ${rr && rr.value}`);
+  assert(rr.putStrike < S && rr.callStrike > S, 'put leg below spot, call leg above');
+  console.log('✓ Test 10 Passed: 25Δ risk reversal picks OTM wings and signs put-richness positive.');
+}
+
+// ── TEST 11: flow/anomaly detectors use increments & exclude the current sample ──
+{
+  const key = 't|1';
+  for (let i = 0; i < 6; i++) updateWelfordZScore(key, 1000 + (i % 2) * 100, true);
+  const spike = updateWelfordZScore(key, 9000, true);
+  assert(spike.isAnomaly && spike.zScore > 2.5, 'a spike must score against *prior* history');
+  const tiny = updateWelfordZScore('t|2', 5, true);
+  assert(!tiny.isAnomaly, 'no anomaly before baseline exists');
+
+  const fk = 'f|1';
+  for (let i = 0; i < 5; i++) assert.strictEqual(updateAndDetectUnusualFlow(24000, 1000, 500, true, fk), null);
+  const flow = updateAndDetectUnusualFlow(24000, 9000, 4000, true, fk);
+  assert(flow && flow.volRatio >= 2.5, 'sudden 9x volume increment is unusual');
+  console.log('✓ Test 11 Passed: anomaly & flow detectors score increments against prior history only.');
+}
+
+// ── TEST 12: regime & ML sanity ──
+{
+  assert.strictEqual(computeCompositeRegime('NEGATIVE_GAMMA', 1.0, 'WIDE', 0, 24000, 24000).regimeLabel, '🌪️ VOLATILE TWO-WAY MOVES', 'neg GEX + neutral PCR must not fall through to a calm label');
+  const calm = computeCompositeRegime('POSITIVE_GAMMA', 1.0, 'AVERAGE', 0, 24000, 24000);
+  assert(calm.confidenceScore <= 90 && calm.confidenceScore >= 60);
+  // spot far ABOVE max pain near expiry should tilt bearish vs the same setup at max pain
+  const atPain = computeIntradayMLPredictions(24000, 24000, 23900, 5, 1.0, 0, 'AVERAGE', 0, { dteDays: 1 });
+  const abovePain = computeIntradayMLPredictions(24000, 23700, 23900, 5, 1.0, 0, 'AVERAGE', 0, { dteDays: 1 });
+  assert(abovePain.directionalTrend.bearishPct > atPain.directionalTrend.bearishPct, 'spot above max pain should lean bearish near expiry');
+  assert(abovePain.marketState.breakoutProbPct < 99 && abovePain.marketState.breakoutProbPct > 1, 'state probabilities must not saturate');
+  console.log('✓ Test 12 Passed: regime fall-through, max-pain gravity direction, no saturation.');
+}
 
 console.log('\n✅ ALL MATHEMATICAL VERIFICATION TESTS PASSED SUCCESSFULLY!\n');

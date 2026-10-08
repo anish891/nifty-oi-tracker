@@ -72,7 +72,11 @@
   <div class="keystrip" id="keyStrip">
     <div class="ks-item"><span class="ks-label">Spot</span><span class="ks-val" id="ksSpot">—</span></div>
     <div class="ks-item"><span class="ks-label">ATM</span><span class="ks-val" id="ksAtm">—</span></div>
+    <div class="ks-item"><span class="ks-label">Day</span><span class="ks-val" id="ksDay">—</span></div>
     <div class="ks-item"><span class="ks-label">PCR</span><span class="ks-val" id="ksPcr">—</span></div>
+    <div class="ks-item"><span class="ks-label">India VIX</span><span class="ks-val" id="ksVix">—</span></div>
+    <div class="ks-item"><span class="ks-label">Max Pain</span><span class="ks-val" id="ksPain">—</span></div>
+    <div class="ks-item"><span class="ks-label">Implied Fut</span><span class="ks-val" id="ksFut">—</span></div>
     <div class="ks-item"><span class="ks-label">Regime</span><span class="ks-val" id="ksRegime">—</span></div>
     <div class="ks-item"><span class="ks-label">Data as of</span><span class="ks-val" id="ksAge">—</span></div>
   </div>
@@ -83,7 +87,7 @@
       <div>
         <div class="hero-eyebrow">
           <span class="eyebrow">Composite Market Regime</span>
-          <span id="regimeConfidence" class="pill pill-accent">Confidence: —</span>
+          <span id="regimeConfidence" class="pill pill-accent">Signal agreement: —</span>
         </div>
         <div id="regimeTitle" class="hero-title">Analyzing Market Regime...</div>
         <div id="regimeStrategy" class="hero-sub">Strategy: —</div>
@@ -178,24 +182,23 @@
           <div id="straddleTotalLtp" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">—
           </div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
-            Open: <span id="straddleOpenPrice">—</span> | High: <span id="straddleHighPrice">—</span> | Low: <span
-              id="straddleLowPrice">—</span>
+            Prev session ATM: <span id="straddleOpenPrice">—</span> · <span id="straddleDayChg">—</span>
           </div>
         </div>
 
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">0.85x Expected
-            Day Move</div>
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Expected Move
+            to Expiry</div>
           <div id="straddleExpectedMove"
             style="font-size: 16px; font-weight: 700; color: var(--warn); margin-top: 2px;">± — pts (—%)</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
-            Formula: <span style="font-family: monospace;">Straddle × 0.85</span>
+            <span style="font-family: monospace;">0.85 × Straddle</span> · ≈ <span id="straddleDailyMove">—</span> pts/day
           </div>
         </div>
 
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
-          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Expected Day
-            Bounds</div>
+          <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Expected
+            Bounds (Expiry)</div>
           <div id="straddleRangeBounds" style="font-size: 14px; font-weight: 700; color: var(--text); margin-top: 2px;">
             —</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
@@ -237,7 +240,7 @@
           </span>
           <span
             style="background: rgba(139,92,246,0.15); color: #a78bfa; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
-            QUANT / ML MODEL
+            QUANT MODEL
           </span>
         </div>
         <span style="font-size: 10px; color: var(--muted);">Derived from 2nd numerical derivative of call price surface:
@@ -287,15 +290,14 @@
         <div style="display: flex; align-items: center; gap: 8px;">
           <span
             style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
-            🤖 Intraday ML Trend & Breakout Prediction Engine
+            Intraday Trend &amp; Breakout Scoring
           </span>
           <span id="mlSignalBadge"
             style="background: rgba(16,185,129,0.15); color: var(--bull); font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
             Signal: Analyzing…
           </span>
         </div>
-        <span style="font-size: 10px; color: var(--muted);">Logistic Softmax + Naive Bayes Ensemble (15-30m
-          Horizon)</span>
+        <span style="font-size: 10px; color: var(--muted);">Hand-weighted scoring model (not trained) · relative scores, not calibrated probabilities</span>
       </div>
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
@@ -304,7 +306,7 @@
           <div
             style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
             <span>📈 15-30m Directional Probability</span>
-            <span id="mlDirectionConfidence" style="color: var(--accent);">Confidence: —</span>
+            <span id="mlDirectionConfidence" style="color: var(--accent);">Signal agreement: —</span>
           </div>
 
           <!-- Progress Bar -->
@@ -393,7 +395,7 @@
           </div>
           <div class="metric-item">
             <div style="display:flex; align-items:center; gap:6px;">
-              <span class="label" style="margin-bottom:0;">IV Skew (ATM)</span>
+              <span class="label" style="margin-bottom:0;">IV Skew (25Δ RR)</span>
               <span id="volRegimeBadge" class="vol-badge" title="Volatility Regime">—</span>
             </div>
             <span class="val" id="mIvSkew">—</span>
@@ -402,7 +404,7 @@
         </div>
         <div class="metric-sub-stats"
           style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
-          <span>Near: <strong id="mNtmPcr">—</strong> | Wtd: <strong id="mWeightedPcr">—</strong></span>
+          <span>Near: <strong id="mNtmPcr">—</strong> | Vol: <strong id="mVolPcr">—</strong></span>
           <span title="PCR Rate of Change (3m & 5m windows)">PCR RoC: <span id="mPcrRoc" style="font-weight: 600;">3m: —
               | 5m: —</span></span>
         </div>
@@ -462,12 +464,22 @@
             <span class="sub" style="font-size: 8px;">Strength: <span id="mSupStrength">—</span>%</span>
           </div>
         </div>
+        <div class="metric-row compact-row">
+          <div class="metric-item">
+            <span class="label">Top Call Walls</span>
+            <span class="val-small bear" id="mWallsCall" style="font-size:11px;">—</span>
+          </div>
+          <div class="metric-item">
+            <span class="label">Top Put Walls</span>
+            <span class="val-small bull" id="mWallsPut" style="font-size:11px;">—</span>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- CARD 5: CPR & PIVOTS -->
     <div class="dashboard-card">
-      <div class="card-header">Central Pivot Range (CPR)</div>
+      <div class="card-header">Central Pivot Range (CPR) <span id="cprSource" style="text-transform:none; letter-spacing:0; font-weight:400; margin-left:6px;"></span></div>
       <div class="card-body">
         <div class="metric-row">
           <div class="metric-item">
