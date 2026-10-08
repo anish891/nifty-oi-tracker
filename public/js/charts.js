@@ -206,3 +206,112 @@ export function renderTimelineChart(canvasId, points, metricKey, metricLabel) {
   chart.options.scales.y1 = { position: 'right', ticks: { color: warn, font: { size: 10 } }, grid: { drawOnChartArea: false } };
   chart.update('none');
 }
+
+let oiChart = null;
+
+// Vertical reference lines (spot, max pain, ...) drawn at a fractional position between strike bars.
+const oiMarkerPlugin = {
+  id: 'oiMarkers',
+  afterDatasetsDraw(chart) {
+    const markers = chart.$oiMarkers || [];
+    const strikes = chart.data.labels;
+    const x = chart.scales.x;
+    if (!markers.length || !strikes.length || !x) return;
+    const { ctx, chartArea } = chart;
+
+    const pixelAt = (value) => {
+      if (value < strikes[0] || value > strikes[strikes.length - 1]) return null;
+      let i = strikes.findIndex(k => k >= value);
+      if (i <= 0) return x.getPixelForValue(0);
+      const lo = strikes[i - 1];
+      const frac = (value - lo) / (strikes[i] - lo || 1);
+      return x.getPixelForValue(i - 1) + frac * (x.getPixelForValue(i) - x.getPixelForValue(i - 1));
+    };
+
+    ctx.save();
+    ctx.font = '600 10px Inter, system-ui, sans-serif';
+    ctx.textBaseline = 'top';
+    let row = 0;
+    markers.forEach(m => {
+      const px = pixelAt(m.value);
+      if (px === null) return;
+      ctx.strokeStyle = m.color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash(m.dash || []);
+      ctx.beginPath();
+      ctx.moveTo(px, chartArea.top);
+      ctx.lineTo(px, chartArea.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const label = `${m.label} ${m.value.toLocaleString('en-IN')}`;
+      const w = ctx.measureText(label).width + 8;
+      const lx = Math.min(Math.max(px - w / 2, chartArea.left), chartArea.right - w);
+      const ly = chartArea.top + 2 + (row++ % 3) * 14;
+      ctx.fillStyle = m.color;
+      ctx.fillRect(lx, ly, w, 13);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, lx + 4, ly + 2);
+    });
+    ctx.restore();
+  }
+};
+
+/**
+ * Grouped bars per strike: calls (bear colour) vs puts (bull colour).
+ * series = { strikes: number[], calls: (number|null)[], puts: (number|null)[], diverging: boolean }
+ */
+export function renderOiChart(canvasId, series, markers = []) {
+  if (!window.Chart) return;
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const bear = cssVar('--bear') || '#ef4444';
+  const bull = cssVar('--bull') || '#10b981';
+  const muted = cssVar('--muted') || '#6b7280';
+  const grid = cssVar('--border') || 'rgba(255,255,255,0.07)';
+
+  if (!oiChart) {
+    oiChart = new window.Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: { labels: [], datasets: [] },
+      plugins: [oiMarkerPlugin],
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: muted, boxWidth: 10, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              title: items => `Strike ${Number(items[0].label).toLocaleString('en-IN')}`,
+              label: item => {
+                const v = item.parsed.y;
+                if (v === null || v === undefined) return `${item.dataset.label}: —`;
+                return `${item.dataset.label}: ${v > 0 && item.chart.$diverging ? '+' : ''}${fmtK(v)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: muted, font: { size: 10 }, callback(v) { return Number(this.getLabelForValue(v)).toLocaleString('en-IN'); } }, grid: { display: false } },
+          y: { ticks: { color: muted, font: { size: 10 }, callback: v => fmtK(v) }, grid: { color: grid } }
+        }
+      }
+    });
+  }
+
+  const chart = oiChart;
+  chart.$oiMarkers = markers;
+  chart.$diverging = !!series.diverging;
+  chart.data.labels = series.strikes;
+  chart.data.datasets = [
+    { label: 'Calls', data: series.calls, backgroundColor: bear, borderRadius: 2, maxBarThickness: 22 },
+    { label: 'Puts', data: series.puts, backgroundColor: bull, borderRadius: 2, maxBarThickness: 22 }
+  ];
+  chart.options.plugins.legend.labels.color = muted;
+  chart.options.scales.x.ticks.color = muted;
+  chart.options.scales.y.ticks.color = muted;
+  chart.options.scales.y.grid.color = grid;
+  chart.update('none');
+}

@@ -1,5 +1,5 @@
 import { fetchOptionChainData, fetchSimilarSessionsData, fetchIntradayData } from './api-client.js';
-import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityChart, renderTimelineChart } from './charts.js';
+import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityChart, renderTimelineChart, renderOiChart } from './charts.js';
 
 let currentData = null;
 let prevData = null;
@@ -17,6 +17,8 @@ let intraday = null;
 let intradayFetchedAt = 0;
 let intradayExpiry = null;
 let timelineMetric = 'pcr';
+let oiChartMode = 'oi';
+try { oiChartMode = localStorage.getItem('oiChartMode') || 'oi'; } catch (e) { /* storage unavailable */ }
 const INTRADAY_REFRESH_MS = 30000;
 const METRIC_LABELS = {
   pcr: 'PCR', volPcr: 'Volume PCR', straddle: 'ATM Straddle', atmIv: 'ATM IV', ivSkew: 'IV Skew (25Δ RR)',
@@ -38,6 +40,7 @@ async function refreshIntraday(force = false) {
   }
   if (currentData) {
     renderTimeline();
+    renderOiChart_();
     renderFlowFeed(currentData);
   }
 }
@@ -46,6 +49,120 @@ export function onTimelineMetricChange() {
   const sel = document.getElementById('timelineMetric');
   timelineMetric = sel ? sel.value : 'pcr';
   renderTimeline();
+}
+
+export function onOiChartModeChange() {
+  const sel = document.getElementById('oiChartMode');
+  oiChartMode = sel ? sel.value : 'oi';
+  try { localStorage.setItem('oiChartMode', oiChartMode); } catch (e) { /* ignore */ }
+  renderOiChart_();
+}
+
+const hmIst = t => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+
+// Builds per-strike bar series for the selected view from live data (+ stored baselines for windows).
+function buildOiSeries(d, mode) {
+  const strikes = d.strikes.map(s => s.strike);
+  if (mode === 'oi') {
+    return {
+      strikes,
+      calls: d.strikes.map(s => s.CE?.openInterest || 0),
+      puts: d.strikes.map(s => s.PE?.openInterest || 0),
+      diverging: false
+    };
+  }
+  if (mode === 'chg') {
+    return {
+      strikes,
+      calls: d.strikes.map(s => s.CE?.changeinOpenInterest || 0),
+      puts: d.strikes.map(s => s.PE?.changeinOpenInterest || 0),
+      diverging: true
+    };
+  }
+  const snap = serverSnapshot(mode);
+  if (!snap) return null;
+  // A strike missing from the baseline (ATM drifted) is skipped rather than shown as a fake full-size build.
+  const delta = (liveOI, base) => (base === undefined ? null : liveOI - base);
+  return {
+    strikes,
+    calls: d.strikes.map(s => delta(s.CE?.openInterest || 0, snap.strikes[s.strike]?.ceOI)),
+    puts: d.strikes.map(s => delta(s.PE?.openInterest || 0, snap.strikes[s.strike]?.peOI)),
+    diverging: true,
+    baselineT: snap.timestamp
+  };
+}
+
+function summarizeOi(d, series, mode) {
+  const el = document.getElementById('oiChartSummary');
+  if (!el) return;
+  const pick = (arr, cmp) => arr.reduce((best, v, i) => (v !== null && (best === null || cmp(v, arr[best])) ? i : best), null);
+  const at = i => (i === null ? '—' : fmt(series.strikes[i]));
+  const fmtV = v => (v > 0 ? '+' : '') + fmtK(v);
+  const parts = [];
+
+  if (mode === 'oi') {
+    const c = pick(series.calls, (a, b) => a > b);
+    const p = pick(series.puts, (a, b) => a > b);
+    const sumC = series.calls.reduce((a, v) => a + (v || 0), 0);
+    const sumP = series.puts.reduce((a, v) => a + (v || 0), 0);
+    parts.push(`Largest call OI: <strong class="bear">${at(c)}</strong> (${fmtK(series.calls[c])})`);
+    parts.push(`Largest put OI: <strong class="bull">${at(p)}</strong> (${fmtK(series.puts[p])})`);
+    parts.push(`PCR in view: <strong>${sumC > 0 ? (sumP / sumC).toFixed(2) : '—'}</strong>`);
+  } else {
+    const cUp = pick(series.calls, (a, b) => a > b);
+    const pUp = pick(series.puts, (a, b) => a > b);
+    const cDn = pick(series.calls, (a, b) => a < b);
+    const pDn = pick(series.puts, (a, b) => a < b);
+    if (cUp !== null && series.calls[cUp] > 0) parts.push(`Biggest call build: <strong class="bear">${at(cUp)}</strong> ${fmtV(series.calls[cUp])}`);
+    if (pUp !== null && series.puts[pUp] > 0) parts.push(`Biggest put build: <strong class="bull">${at(pUp)}</strong> ${fmtV(series.puts[pUp])}`);
+    if (cDn !== null && series.calls[cDn] < 0) parts.push(`Biggest call unwind: <strong>${at(cDn)}</strong> ${fmtV(series.calls[cDn])}`);
+    if (pDn !== null && series.puts[pDn] < 0) parts.push(`Biggest put unwind: <strong>${at(pDn)}</strong> ${fmtV(series.puts[pDn])}`);
+    const net = (arr) => arr.reduce((a, v) => a + (v || 0), 0);
+    parts.push(`Net in view: calls <strong>${fmtV(net(series.calls))}</strong> · puts <strong>${fmtV(net(series.puts))}</strong>`);
+  }
+  el.innerHTML = parts.map(x => `<span>${x}</span>`).join('');
+}
+
+function renderOiChart_() {
+  const d = currentData;
+  if (!d || !d.strikes || !d.strikes.length) return;
+
+  // Label window options with the baseline they would compare against; disable the ones without history.
+  const sel = document.getElementById('oiChartMode');
+  if (sel) {
+    const names = { m5: 'last 5 min', m15: 'last 15 min', m30: 'last 30 min', open: 'since first snapshot' };
+    [...sel.options].forEach(o => {
+      if (!names[o.value]) return;
+      const snap = serverSnapshot(o.value);
+      o.disabled = !snap;
+      o.textContent = snap ? `OI change · ${names[o.value]} (vs ${hmIst(snap.timestamp)})` : `OI change · ${names[o.value]} (needs history)`;
+    });
+    if (sel.value !== oiChartMode) sel.value = oiChartMode;
+  }
+
+  let mode = oiChartMode;
+  let series = buildOiSeries(d, mode);
+  const empty = document.getElementById('oiChartEmpty');
+  if (!series) {
+    // Chosen window has no baseline yet: fall back to plain OI instead of showing an empty chart
+    mode = 'oi';
+    series = buildOiSeries(d, 'oi');
+    if (sel) sel.value = 'oi'; // show what is drawn; the saved preference is kept for when history arrives
+    if (empty) empty.textContent = '';
+  } else if (empty) {
+    empty.textContent = '';
+  }
+
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const markers = [
+    { value: d.spot, label: 'Spot', color: css('--accent') || '#3b82f6' },
+    { value: d.maxPain, label: 'Max Pain', color: css('--warn') || '#f59e0b', dash: [5, 4] }
+  ];
+  if (d.walls?.calls?.[0]) markers.push({ value: d.walls.calls[0].strike, label: 'Call wall', color: css('--bear') || '#ef4444', dash: [2, 3] });
+  if (d.walls?.puts?.[0]) markers.push({ value: d.walls.puts[0].strike, label: 'Put wall', color: css('--bull') || '#10b981', dash: [2, 3] });
+
+  renderOiChart('oiChart', series, markers);
+  summarizeOi(d, series, mode);
 }
 
 function renderTimeline() {
@@ -459,6 +576,7 @@ export function renderAll() {
   recordSnapshot(d);
   renderFlowFeed(d);
   renderTimeline();
+  renderOiChart_();
   fetchSimilarSessions();
   renderTable();
 }
@@ -1407,6 +1525,7 @@ window.fetchNow = fetchNow;
 window.onIntervalChange = onIntervalChange;
 window.onExpiryChange = onExpiryChange;
 window.onTimelineMetricChange = onTimelineMetricChange;
+window.onOiChartModeChange = onOiChartModeChange;
 window.onThemeSelectChange = onThemeSelectChange;
 window.sortTable = sortTable;
 window.toggleGreeksView = toggleGreeksView;

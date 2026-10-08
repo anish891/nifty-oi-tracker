@@ -1332,3 +1332,36 @@ body.exporting-pdf .keystrip {
   background: var(--warn-soft);
   color: var(--warn);
 }
+
+.oi-chart-wrap {
+  position: relative;
+  height: 300px;
+}
+
+.oi-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.oi-summary strong {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.oi-summary .bear {
+  color: var(--bear);
+}
+
+.oi-summary .bull {
+  color: var(--bull);
+}
+
+@media (max-width: 720px) {
+  .oi-chart-wrap {
+    height: 260px;
+  }
+}

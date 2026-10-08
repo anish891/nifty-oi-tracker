@@ -533,6 +533,34 @@
     </div>
   </div>
 
+  <!-- OI STRUCTURE (strike-wise OI / OI change) -->
+  <div id="oiChartSection" class="section">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>
+          OI Structure by Strike
+        </div>
+        <label class="panel-note" style="display:flex; align-items:center; gap:6px;">
+          View
+          <select id="oiChartMode" onchange="onOiChartModeChange()">
+            <option value="oi" selected>Open interest</option>
+            <option value="chg">Change in OI (vs prev close)</option>
+            <option value="m5">OI change · last 5 min</option>
+            <option value="m15">OI change · last 15 min</option>
+            <option value="m30">OI change · last 30 min</option>
+            <option value="open">OI change · since first snapshot</option>
+          </select>
+        </label>
+      </div>
+      <div class="oi-chart-wrap">
+        <canvas id="oiChart"></canvas>
+        <div id="oiChartEmpty" class="timeline-empty"></div>
+      </div>
+      <div id="oiChartSummary" class="oi-summary"></div>
+    </div>
+  </div>
+
   <!-- INTRADAY TIMELINE (persisted snapshots) -->
   <div id="timelineSection" class="section">
     <div class="panel">
