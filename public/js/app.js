@@ -1,3 +1,4 @@
+import { initAlerts, processAlerts, toggleAlertsDrawer, alertsEnabled } from './alerts.js';
 import { fetchOptionChainData, fetchSimilarSessionsData, fetchIntradayData } from './api-client.js';
 import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityChart, renderTimelineChart, renderOiChart } from './charts.js';
 
@@ -203,7 +204,7 @@ function serverSnapshot(name) {
   if (b.t >= nowT) return null;
   const strikes = {};
   Object.entries(b.strikes || {}).forEach(([k, [ce, pe]]) => { strikes[k] = { ceOI: ce, peOI: pe }; });
-  return { pcr: b.pcr, totalCallOI: b.callOI, totalPutOI: b.putOI, strikes, timestamp: b.t };
+  return { pcr: b.pcr, spot: b.spot, totalCallOI: b.callOI, totalPutOI: b.putOI, strikes, timestamp: b.t };
 }
 
 export async function fetchNow() {
@@ -577,6 +578,7 @@ export function renderAll() {
   renderFlowFeed(d);
   renderTimeline();
   renderOiChart_();
+  processAlerts(d, { spikeAlerts: lastSpikeAlerts, spot5m: serverSnapshot('m5')?.spot });
   fetchSimilarSessions();
   renderTable();
 }
@@ -690,11 +692,13 @@ function calculateAndRenderRoC(d) {
       if (peDelta >= 25000) {
         spikeAlerts.push({
           type: 'PUT_WRITING',
+          strike: s.strike,
           summary: `⚡ Rapid Put Writing at ${s.strike}: +${fmtK(peDelta)} in ${timeLabel} (Bullish Support)`
         });
       } else if (peDelta <= -20000) {
         spikeAlerts.push({
           type: 'PUT_UNWINDING',
+          strike: s.strike,
           summary: `⚠️ Rapid Put Unwinding at ${s.strike}: ${fmtK(peDelta)} in ${timeLabel} (Support Break)`
         });
       }
@@ -702,11 +706,13 @@ function calculateAndRenderRoC(d) {
       if (ceDelta >= 25000) {
         spikeAlerts.push({
           type: 'CALL_WRITING',
+          strike: s.strike,
           summary: `⚡ Rapid Call Writing at ${s.strike}: +${fmtK(ceDelta)} in ${timeLabel} (Bearish Wall)`
         });
       } else if (ceDelta <= -20000) {
         spikeAlerts.push({
           type: 'CALL_COVERING',
+          strike: s.strike,
           summary: `🚀 Rapid Call Short Covering at ${s.strike}: ${fmtK(ceDelta)} in ${timeLabel} (Short Squeeze)`
         });
       }
@@ -716,8 +722,11 @@ function calculateAndRenderRoC(d) {
   return spikeAlerts;
 }
 
+let lastSpikeAlerts = [];
+
 function renderFlowFeed(d) {
   const spikeAlerts = calculateAndRenderRoC(d);
+  lastSpikeAlerts = spikeAlerts;
 
   const flowFeed = document.getElementById('flowAlertsFeed');
   if (flowFeed) {
@@ -1006,9 +1015,10 @@ function isMarketOpen() {
 
 function scheduleNext() {
   clearTimeout(timer);
-  // Closed market: data is static, poll slowly. Hidden tab: don't poll at all.
-  if (document.hidden) return;
-  const delay = isMarketOpen() ? intervalMs : Math.max(intervalMs, 60000);
+  // Closed market: data is static, poll slowly. Hidden tab: stop polling unless alerts need it.
+  if (document.hidden && !alertsEnabled()) return;
+  let delay = isMarketOpen() ? intervalMs : Math.max(intervalMs, 60000);
+  if (document.hidden) delay = Math.max(delay, 30000);
   cdRemaining = Math.round(delay / 1000);
   timer = setTimeout(async () => {
     await fetchNow();
@@ -1031,7 +1041,7 @@ export function startAutoRefresh() {
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    clearTimeout(timer);
+    if (!alertsEnabled()) clearTimeout(timer);
   } else {
     fetchNow().then(scheduleNext); // catch up immediately on return
   }
@@ -1526,6 +1536,7 @@ window.onIntervalChange = onIntervalChange;
 window.onExpiryChange = onExpiryChange;
 window.onTimelineMetricChange = onTimelineMetricChange;
 window.onOiChartModeChange = onOiChartModeChange;
+window.toggleAlertsDrawer = toggleAlertsDrawer;
 window.onThemeSelectChange = onThemeSelectChange;
 window.sortTable = sortTable;
 window.toggleGreeksView = toggleGreeksView;
@@ -1538,6 +1549,7 @@ window.closeExportMenu = closeExportMenu;
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  initAlerts();
   document.body.classList.add('is-loading');
   const tb = document.querySelector('.topbar');
   const syncTopbar = () => tb && document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');
