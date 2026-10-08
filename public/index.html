@@ -57,10 +57,10 @@
       </select>
       <label class="interval-label">Refresh</label>
       <select id="intervalSelect" onchange="onIntervalChange()">
-        <option value="1500" selected>1.5s</option>
-        <option value="3000">3s</option>
+        <option value="3000" selected>3s</option>
         <option value="5000">5s</option>
         <option value="10000">10s</option>
+        <option value="30000">30s</option>
       </select>
       <button class="refresh-btn" onclick="fetchNow()">
         ↻ Refresh now
@@ -635,7 +635,7 @@
       <span class="leg-item"><span class="leg-dot" style="background:rgba(245,158,11,0.7)"></span> Long unwinding</span>
       <span class="leg-item"><span class="leg-dot" style="background:rgba(139,92,246,0.7)"></span> Short covering</span>
     </div>
-    <div class="countdown">Next refresh in <span id="cdTimer">5</span>s</div>
+    <div class="countdown">Next refresh in <span id="cdTimer">3</span>s</div>
   </div>
 
   <script type="module" src="/js/app.js"></script>

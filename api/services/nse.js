@@ -46,31 +46,60 @@ async function getCookies() {
   return cookies;
 }
 
-async function fetchWithTimeout(url, cookies) {
+async function fetchWithTimeout(url, cookies, attempt = 0) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 5000);
+  const timeout = setTimeout(() => controller.abort(), 6000);
 
   try {
     const res = await fetch(url, {
-      headers: {
-        ...NSE_HEADERS,
-        Cookie: cookies
-      },
+      headers: { ...NSE_HEADERS, Cookie: cookies },
       signal: controller.signal
     });
 
+    // Cookies are only bad on auth failures; don't drop them on a plain timeout.
+    if (res.status === 401 || res.status === 403) {
+      cookieCache = { value: '', ts: 0 };
+      throw new Error(`NSE rejected request (${res.status})`);
+    }
     return await res.json();
   } catch (e) {
-    cookieCache = { value: '', ts: 0 };
+    if (attempt < 1) {
+      const fresh = cookieCache.value ? cookies : await getCookies().catch(() => cookies);
+      return fetchWithTimeout(url, fresh, attempt + 1);
+    }
     throw e;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function fetchRawNSEOptionChain(symbol = 'NIFTY', expiryDate = null) {
+// --- Caching layers -------------------------------------------------------
+const EXPIRY_TTL = 60 * 60 * 1000;   // expiry list changes ~daily
+const RAW_TTL = 5000;                // NSE itself only updates every ~30-60s
+const STALE_MAX = 5 * 60 * 1000;     // serve last good data up to 5 min on errors
+
+let expiryCache = { list: null, ts: 0 };
+const rawCache = new Map();          // `${symbol}|${expiry}` -> { value, ts }
+const inflight = new Map();          // key -> Promise
+
+function parseNseDate(str) {
+  const d = new Date(`${str.replace(/-/g, ' ')} 23:59:59 GMT+0530`);
+  return isNaN(d) ? null : d.getTime();
+}
+
+function getCachedExpiries() {
+  if (!expiryCache.list || Date.now() - expiryCache.ts > EXPIRY_TTL) return null;
+  // Drop the list once its nearest expiry has passed
+  const first = parseNseDate(expiryCache.list[0]);
+  if (first && first < Date.now()) return null;
+  return expiryCache.list;
+}
+
+function expiryUrl(symbol, expiry) {
+  return `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(expiry)}`;
+}
+
+async function loadFromNSE(symbol, expiryDate) {
   let cookies = '';
   try {
     cookies = await getCookies();
@@ -78,28 +107,58 @@ async function fetchRawNSEOptionChain(symbol = 'NIFTY', expiryDate = null) {
     console.error('Cookie fetch failed:', e.message);
   }
 
-  const bootstrapExpiry = expiryDate || '30-Jun-2026';
-  let url = `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(bootstrapExpiry)}`;
+  const known = getCachedExpiries();
+  // With a cached expiry list the target is known up front -> single NSE call.
+  const targetGuess = expiryDate || (known && known[0]) || null;
+  const bootstrapExpiry = targetGuess || '30-Jun-2026';
 
-  let raw = await fetchWithTimeout(url, cookies);
-
+  let raw = await fetchWithTimeout(expiryUrl(symbol, bootstrapExpiry), cookies);
   if (!raw?.records?.expiryDates?.length) {
     throw new Error('Unexpected NSE response structure');
   }
 
   const allExpiries = raw.records.expiryDates;
+  expiryCache = { list: allExpiries, ts: Date.now() };
   const targetExpiry = expiryDate || allExpiries[0];
 
   if (targetExpiry !== bootstrapExpiry) {
-    url = `https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol=${symbol}&expiry=${encodeURIComponent(targetExpiry)}`;
-    raw = await fetchWithTimeout(url, cookies);
-
+    raw = await fetchWithTimeout(expiryUrl(symbol, targetExpiry), cookies);
     if (!raw?.records?.data) {
       throw new Error('Unexpected NSE response structure');
     }
   }
 
   return { raw, allExpiries, targetExpiry };
+}
+
+async function fetchRawNSEOptionChain(symbol = 'NIFTY', expiryDate = null) {
+  const known = getCachedExpiries();
+  const resolved = expiryDate || (known && known[0]) || null;
+  const key = `${symbol}|${resolved || 'nearest'}`;
+
+  const hit = rawCache.get(key);
+  if (hit && Date.now() - hit.ts < RAW_TTL) return hit.value;
+
+  // Coalesce concurrent requests into one NSE call
+  if (inflight.has(key)) return inflight.get(key);
+
+  const p = loadFromNSE(symbol, expiryDate)
+    .then(value => {
+      rawCache.set(key, { value, ts: Date.now() });
+      return value;
+    })
+    .catch(err => {
+      // Stale-on-error: better old data than a "Disconnected" dashboard
+      if (hit && Date.now() - hit.ts < STALE_MAX) {
+        console.error('NSE fetch failed, serving stale data:', err.message);
+        return hit.value;
+      }
+      throw err;
+    })
+    .finally(() => inflight.delete(key));
+
+  inflight.set(key, p);
+  return p;
 }
 
 module.exports = {

@@ -3,7 +3,7 @@ import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityC
 
 let currentData = null;
 let prevData = null;
-let intervalMs = 1500;
+let intervalMs = 3000;
 let timer = null;
 let cdInterval = null;
 let sortCol = null;
@@ -18,10 +18,13 @@ export async function fetchNow() {
   fetchInProgress = true;
   try {
     const data = await fetchOptionChainData(selectedExpiry);
-    prevData = currentData;
-    currentData = data;
+    const unchanged = currentData && data.fetchedAt === currentData.fetchedAt;
+    if (!unchanged) {
+      prevData = currentData;
+      currentData = data;
+      renderAll();
+    }
     hideOverlay();
-    renderAll();
     setLive(true);
   } catch (e) {
     setLive(false);
@@ -35,7 +38,7 @@ export function setLive(ok) {
   const dot = document.getElementById('liveDot');
   const st = document.getElementById('statusText');
   if (dot) dot.classList.toggle('error', !ok);
-  if (st) st.textContent = ok ? 'Live · auto-refresh every ' + (intervalMs / 1000) + 's' : 'Disconnected / Retrying…';
+  if (st) st.textContent = ok ? (isMarketOpen() ? 'Live · auto-refresh every ' + (intervalMs / 1000) + 's' : 'Market closed · refreshing every 60s') : 'Disconnected / Retrying…';
 }
 
 export function hideOverlay() {
@@ -555,7 +558,7 @@ export function renderTable() {
   const tbody = document.getElementById('chainBody');
   if (!tbody) return;
 
-  tbody.innerHTML = rows.map(r => {
+  const htmls = rows.map(r => {
     const ce = r.CE || {};
     const pe = r.PE || {};
     const prev = prevMap[r.strike] || {};
@@ -659,7 +662,44 @@ export function renderTable() {
   <td class="right greeks-col ${cGreeksClass} ${Math.abs(pDeltaVal) > 0.5 ? 'pos' : ''}" style="font-family:var(--mono); font-size:11px;">${pDeltaVal}</td>
   <td class="right greeks-col ${cGreeksClass} neg" style="font-family:var(--mono); font-size:11px;">${pThetaVal}</td>
 </tr>`;
-  }).join('');
+  });
+
+  reconcileRows(tbody, rows.map(r => r.strike), htmls);
+}
+
+// Only touch rows whose markup changed; keep unchanged <tr> nodes in place.
+const rowHtmlCache = new Map();
+function reconcileRows(tbody, keys, htmls) {
+  const existing = new Map();
+  for (const tr of tbody.children) existing.set(tr.dataset.strike, tr);
+
+  const tpl = document.createElement('template');
+  const seen = new Set();
+  let cursor = tbody.firstElementChild;
+
+  keys.forEach((strike, i) => {
+    const key = String(strike);
+    seen.add(key);
+    let tr = existing.get(key);
+
+    if (!tr || rowHtmlCache.get(key) !== htmls[i]) {
+      tpl.innerHTML = htmls[i].trim();
+      const fresh = tpl.content.firstElementChild;
+      if (tr) {
+        if (tr === cursor) cursor = cursor.nextElementSibling;
+        tr.replaceWith(fresh);
+      }
+      tr = fresh;
+      rowHtmlCache.set(key, htmls[i]);
+    }
+
+    if (tr !== cursor) tbody.insertBefore(tr, cursor);
+    else cursor = cursor.nextElementSibling;
+  });
+
+  for (const [key, tr] of existing) {
+    if (!seen.has(key)) { tr.remove(); rowHtmlCache.delete(key); }
+  }
 }
 
 export function getSortVal(row, col) {
@@ -707,15 +747,29 @@ export function sortTable(col) {
   renderTable();
 }
 
-export function startAutoRefresh() {
-  clearInterval(timer);
-  clearInterval(cdInterval);
-  cdRemaining = intervalMs / 1000;
+function isMarketOpen() {
+  // NSE cash hours: Mon-Fri 09:15-15:30 IST (with a small buffer)
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const day = ist.getDay();
+  const mins = ist.getHours() * 60 + ist.getMinutes();
+  return day >= 1 && day <= 5 && mins >= 9 * 60 + 10 && mins <= 15 * 60 + 40;
+}
 
-  timer = setInterval(() => {
-    fetchNow();
-    cdRemaining = intervalMs / 1000;
-  }, intervalMs);
+function scheduleNext() {
+  clearTimeout(timer);
+  // Closed market: data is static, poll slowly. Hidden tab: don't poll at all.
+  if (document.hidden) return;
+  const delay = isMarketOpen() ? intervalMs : Math.max(intervalMs, 60000);
+  cdRemaining = Math.round(delay / 1000);
+  timer = setTimeout(async () => {
+    await fetchNow();
+    scheduleNext();
+  }, delay);
+}
+
+export function startAutoRefresh() {
+  clearTimeout(timer);
+  clearInterval(cdInterval);
 
   cdInterval = setInterval(() => {
     cdRemaining = Math.max(0, cdRemaining - 1);
@@ -723,13 +777,20 @@ export function startAutoRefresh() {
     if (cdEl) cdEl.textContent = cdRemaining;
   }, 1000);
 
-  const cdEl = document.getElementById('cdTimer');
-  if (cdEl) cdEl.textContent = intervalMs / 1000;
+  scheduleNext();
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearTimeout(timer);
+  } else {
+    fetchNow().then(scheduleNext); // catch up immediately on return
+  }
+});
 
 export function onIntervalChange() {
   const sel = document.getElementById('intervalSelect');
-  intervalMs = sel ? parseInt(sel.value, 10) : 1500;
+  intervalMs = sel ? parseInt(sel.value, 10) : 3000;
   setLive(true);
   startAutoRefresh();
 }

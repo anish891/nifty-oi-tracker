@@ -326,7 +326,7 @@ async function computeVolatilityRegime(currentAtmIv, pool) {
 }
 
 let cache = { data: null, ts: 0, expiry: null };
-const CACHE_TTL = 1000; // 1s TTL
+const CACHE_TTL = 5000; // 5s TTL (NSE data refreshes every ~30-60s)
 
 async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const now = Date.now();
