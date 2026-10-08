@@ -65,7 +65,32 @@ NSE blocks direct browser requests (CORS). The backend proxy:
 - NSE API is only live during market hours (9:15 AM – 3:30 PM IST on weekdays)
 - Outside market hours, NSE returns the last EOD snapshot
 - If NSE blocks requests temporarily, you may see an error — it auto-retries
-- The proxy does NOT store any data; it's a pure passthrough
+
+---
+
+## History & persistence (optional but recommended)
+
+Each time NSE publishes a new option-chain snapshot (~once a minute) the server stores a compact copy
+(series point + per-strike OI/price/IV). That powers the **Intraday Timeline** chart, the 5m/15m rate-of-change
+figures (which now survive a page refresh), and end-of-day **session summaries** used by
+"Sessions That Looked Like Today" and the IV z-score.
+
+Storage is **Upstash Redis over REST** (no connection pool, no extra dependency):
+
+1. Vercel → your project → **Storage / Marketplace → Upstash Redis → Create** (free tier is plenty:
+   ≈1–2 KB per snapshot, ~400 snapshots per trading day).
+2. Vercel injects `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or set `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`).
+3. Redeploy. The chip on the timeline card switches from `History: in-memory` to `History: saved`.
+
+Without those variables the app still works; history just lives in memory and disappears on restart / cold start.
+Check status any time at `/api/storage-status`.
+
+**Recording while nobody has the page open.** Snapshots are recorded whenever someone's browser polls, and also by
+`GET /api/cron/snapshot` — hit it every minute during market hours (09:15–15:30 IST, Mon–Fri) from an external pinger
+(e.g. cron-job.org) or Vercel Cron on a plan that allows per-minute crons (Hobby only allows daily). Set `CRON_SECRET`
+to require `Authorization: Bearer <secret>` (or `?key=<secret>`).
+
+Optional env: `NIFTY_LOT_SIZE` (GEX scaling, default 65), `RISK_FREE_RATE` (default 0.065).
 
 ---
 

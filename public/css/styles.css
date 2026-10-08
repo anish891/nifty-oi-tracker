@@ -1310,3 +1310,25 @@ tbody tr.atm-row td {
 body.exporting-pdf .keystrip {
   display: none !important;
 }
+
+.timeline-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 20px;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.timeline-empty:empty {
+  display: none;
+}
+
+.pill-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}

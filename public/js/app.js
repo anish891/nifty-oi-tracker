@@ -1,5 +1,5 @@
-import { fetchOptionChainData, fetchSimilarSessionsData } from './api-client.js';
-import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityChart } from './charts.js';
+import { fetchOptionChainData, fetchSimilarSessionsData, fetchIntradayData } from './api-client.js';
+import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityChart, renderTimelineChart } from './charts.js';
 
 let currentData = null;
 let prevData = null;
@@ -11,6 +11,83 @@ let sortDir = -1;
 let selectedExpiry = null;
 let cdRemaining = 5;
 let fetchInProgress = false;
+
+// Server-side intraday history (survives page refresh / cold starts when storage is configured)
+let intraday = null;
+let intradayFetchedAt = 0;
+let intradayExpiry = null;
+let timelineMetric = 'pcr';
+const INTRADAY_REFRESH_MS = 30000;
+const METRIC_LABELS = {
+  pcr: 'PCR', volPcr: 'Volume PCR', straddle: 'ATM Straddle', atmIv: 'ATM IV', ivSkew: 'IV Skew (25Δ RR)',
+  vix: 'India VIX', gexCr: 'Net GEX (Cr)', callOI: 'Total Call OI', putOI: 'Total Put OI'
+};
+
+async function refreshIntraday(force = false) {
+  const expiry = currentData && currentData.expiry;
+  if (!expiry) return;
+  const stale = Date.now() - intradayFetchedAt > INTRADAY_REFRESH_MS;
+  if (!force && !stale && intradayExpiry === expiry) return;
+  intradayFetchedAt = Date.now();
+  intradayExpiry = expiry;
+  try {
+    intraday = await fetchIntradayData(expiry);
+  } catch (e) {
+    console.error('Intraday history fetch failed:', e);
+    intraday = null;
+  }
+  if (currentData) {
+    renderTimeline();
+    renderFlowFeed(currentData);
+  }
+}
+
+export function onTimelineMetricChange() {
+  const sel = document.getElementById('timelineMetric');
+  timelineMetric = sel ? sel.value : 'pcr';
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const chip = document.getElementById('historyChip');
+  const empty = document.getElementById('timelineEmpty');
+  const points = intraday && intraday.expiry === (currentData && currentData.expiry) ? intraday.points || [] : [];
+
+  if (chip) {
+    if (!intraday) {
+      chip.textContent = 'History: unavailable';
+      chip.className = 'pill pill-warn';
+    } else if (intraday.persistent) {
+      chip.textContent = `History: saved · ${points.length} pts${intraday.date ? ' · ' + intraday.date : ''}`;
+      chip.className = 'pill pill-bull';
+    } else {
+      chip.textContent = `History: in-memory · ${points.length} pts`;
+      chip.className = 'pill pill-warn';
+      chip.title = 'No storage configured — history is lost on restart/cold start. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.';
+    }
+  }
+
+  if (points.length < 2) {
+    if (empty) empty.textContent = intraday
+      ? 'Collecting snapshots — one is stored each time NSE updates (about once a minute).'
+      : 'Intraday history is unavailable right now.';
+    if (points.length === 0) return;
+  } else if (empty) {
+    empty.textContent = '';
+  }
+  renderTimelineChart('timelineChart', points, timelineMetric, METRIC_LABELS[timelineMetric] || timelineMetric);
+}
+
+// Baseline snapshot (5m / 15m earlier) from server history, shaped like a local snapshot.
+function serverSnapshot(name) {
+  const b = intraday && intraday.baselines && intraday.baselines[name];
+  if (!b || !currentData || intraday.expiry !== currentData.expiry) return null;
+  const nowT = new Date(currentData.dataAsOf || currentData.fetchedAt).getTime();
+  if (b.t >= nowT) return null;
+  const strikes = {};
+  Object.entries(b.strikes || {}).forEach(([k, [ce, pe]]) => { strikes[k] = { ceOI: ce, peOI: pe }; });
+  return { pcr: b.pcr, totalCallOI: b.callOI, totalPutOI: b.putOI, strikes, timestamp: b.t };
+}
 
 export async function fetchNow() {
   if (fetchInProgress) return;
@@ -26,6 +103,7 @@ export async function fetchNow() {
     }
     hideOverlay();
     setLive(true);
+    refreshIntraday();
   } catch (e) {
     setLive(false);
     console.error('Fetch failed:', e);
@@ -378,42 +456,9 @@ export function renderAll() {
   renderTradeSetup(d);
 
 
-  const spikeAlerts = calculateAndRenderRoC(d);
-
-  const flowFeed = document.getElementById('flowAlertsFeed');
-  if (flowFeed) {
-    const combinedAlerts = [];
-
-    // Add 3m/5m institutional spike alerts first
-    spikeAlerts.forEach(s => {
-      const isBull = s.type === 'PUT_WRITING' || s.type === 'CALL_COVERING';
-      const color = isBull ? 'var(--bull)' : 'var(--bear)';
-      const bg = isBull ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
-      const border = isBull ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
-      combinedAlerts.push(`
-        <span style="background: ${bg}; color: ${color}; border: 1px solid ${border}; border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
-          ${s.summary}
-        </span>
-      `);
-    });
-
-    if (d.unusualActivity && d.unusualActivity.length > 0) {
-      d.unusualActivity.forEach(a => {
-        combinedAlerts.push(`
-          <span style="background: rgba(245,158,11,0.15); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
-            ${a.intensity === 'CRITICAL' ? '⚡' : '🔥'} ${a.summary}
-          </span>
-        `);
-      });
-    }
-
-    if (combinedAlerts.length > 0) {
-      flowFeed.innerHTML = combinedAlerts.join('');
-    } else {
-      flowFeed.innerHTML = '<span style="color: var(--muted);">Scanning for 3m/5m OI velocity & volume anomalies...</span>';
-    }
-  }
-
+  recordSnapshot(d);
+  renderFlowFeed(d);
+  renderTimeline();
   fetchSimilarSessions();
   renderTable();
 }
@@ -442,8 +487,8 @@ function recordSnapshot(d) {
     strikes: strikesMap
   });
 
-  // Maintain up to 7 minutes of rolling history (420,000 ms)
-  const cutoff = now - 420000;
+  // Maintain up to 16 minutes of rolling history (local fallback when server history is unavailable)
+  const cutoff = now - 960000;
   while (snapshotHistory.length > 0 && snapshotHistory[0].timestamp < cutoff) {
     snapshotHistory.shift();
   }
@@ -473,10 +518,10 @@ function getSnapshotAgo(msAgo) {
 }
 
 function calculateAndRenderRoC(d) {
-  recordSnapshot(d);
-
   const snap3m = getSnapshotAgo(180000);
-  const snap5m = getSnapshotAgo(300000);
+  const snap5m = serverSnapshot('m5') || getSnapshotAgo(300000);
+  const snap15m = serverSnapshot('m15') || getSnapshotAgo(900000);
+  const snapOpen = serverSnapshot('open');
 
   const fmtDelta = (val, isPcr = false) => {
     if (val === null || val === undefined) return '—';
@@ -491,35 +536,32 @@ function calculateAndRenderRoC(d) {
     }
   };
 
-  // PCR RoC
-  const pcr3m = snap3m ? d.pcr - snap3m.pcr : null;
-  const pcr5m = snap5m ? d.pcr - snap5m.pcr : null;
+  // PCR RoC (5m / 15m; tooltip adds change since the open when history has it)
+  const diff = (snap, key, now) => (snap ? now - snap[key] : null);
   const pcrRocEl = document.getElementById('mPcrRoc');
   if (pcrRocEl) {
-    pcrRocEl.innerHTML = `3m: ${fmtDelta(pcr3m, true)} | 5m: ${fmtDelta(pcr5m, true)}`;
+    pcrRocEl.innerHTML = `5m: ${fmtDelta(diff(snap5m, 'pcr', d.pcr), true)} | 15m: ${fmtDelta(diff(snap15m, 'pcr', d.pcr), true)}`;
+    pcrRocEl.title = snapOpen ? `Since open: ${(d.pcr - snapOpen.pcr >= 0 ? '+' : '')}${(d.pcr - snapOpen.pcr).toFixed(2)}` : '';
   }
 
   // Call & Put OI RoC
-  const call3m = snap3m ? d.totalCallOI - snap3m.totalCallOI : null;
-  const call5m = snap5m ? d.totalCallOI - snap5m.totalCallOI : null;
-  const put3m = snap3m ? d.totalPutOI - snap3m.totalPutOI : null;
-  const put5m = snap5m ? d.totalPutOI - snap5m.totalPutOI : null;
-
   const callRocEl = document.getElementById('mCallRoc');
   if (callRocEl) {
-    callRocEl.innerHTML = `3m: ${fmtDelta(call3m)} | 5m: ${fmtDelta(call5m)}`;
+    callRocEl.innerHTML = `5m: ${fmtDelta(diff(snap5m, 'totalCallOI', d.totalCallOI))} | 15m: ${fmtDelta(diff(snap15m, 'totalCallOI', d.totalCallOI))}`;
+    callRocEl.title = snapOpen ? `Since open: ${fmtK(d.totalCallOI - snapOpen.totalCallOI)}` : '';
   }
 
   const putRocEl = document.getElementById('mPutRoc');
   if (putRocEl) {
-    putRocEl.innerHTML = `3m: ${fmtDelta(put3m)} | 5m: ${fmtDelta(put5m)}`;
+    putRocEl.innerHTML = `5m: ${fmtDelta(diff(snap5m, 'totalPutOI', d.totalPutOI))} | 15m: ${fmtDelta(diff(snap15m, 'totalPutOI', d.totalPutOI))}`;
+    putRocEl.title = snapOpen ? `Since open: ${fmtK(d.totalPutOI - snapOpen.totalPutOI)}` : '';
   }
 
   // Institutional Spike Detection (3-min & 5-min strike velocity)
   const spikeAlerts = [];
-  const compSnap = snap3m || snap5m;
+  const compSnap = snap5m || snap3m;
   if (compSnap && d.strikes && Array.isArray(d.strikes)) {
-    const timeLabel = snap3m ? '3m' : 'recent';
+    const timeLabel = snap5m ? '5m' : 'recent';
     d.strikes.forEach(s => {
       const prevStrike = compSnap.strikes[s.strike];
       if (!prevStrike) return;
@@ -554,6 +596,45 @@ function calculateAndRenderRoC(d) {
   }
 
   return spikeAlerts;
+}
+
+function renderFlowFeed(d) {
+  const spikeAlerts = calculateAndRenderRoC(d);
+
+  const flowFeed = document.getElementById('flowAlertsFeed');
+  if (flowFeed) {
+    const combinedAlerts = [];
+
+    // Add 5m institutional spike alerts first
+    spikeAlerts.forEach(s => {
+      const isBull = s.type === 'PUT_WRITING' || s.type === 'CALL_COVERING';
+      const color = isBull ? 'var(--bull)' : 'var(--bear)';
+      const bg = isBull ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+      const border = isBull ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)';
+      combinedAlerts.push(`
+        <span style="background: ${bg}; color: ${color}; border: 1px solid ${border}; border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
+          ${s.summary}
+        </span>
+      `);
+    });
+
+    if (d.unusualActivity && d.unusualActivity.length > 0) {
+      d.unusualActivity.forEach(a => {
+        combinedAlerts.push(`
+          <span style="background: rgba(245,158,11,0.15); color: var(--warn); border: 1px solid rgba(245,158,11,0.3); border-radius: 4px; padding: 2px 8px; white-space: nowrap; font-weight: 600;">
+            ${a.intensity === 'CRITICAL' ? '⚡' : '🔥'} ${a.summary}
+          </span>
+        `);
+      });
+    }
+
+    if (combinedAlerts.length > 0) {
+      flowFeed.innerHTML = combinedAlerts.join('');
+    } else {
+      flowFeed.innerHTML = '<span style="color: var(--muted);">Scanning for 5m OI velocity & volume anomalies...</span>';
+    }
+  }
+
 }
 
 export async function fetchSimilarSessions() {
@@ -848,6 +929,7 @@ export function onIntervalChange() {
 export function onExpiryChange() {
   const sel = document.getElementById('expirySelect');
   selectedExpiry = sel ? sel.value : null;
+  intraday = null;
   fetchNow();
 }
 
@@ -1324,6 +1406,7 @@ export function renderTradeSetup(d) {
 window.fetchNow = fetchNow;
 window.onIntervalChange = onIntervalChange;
 window.onExpiryChange = onExpiryChange;
+window.onTimelineMetricChange = onTimelineMetricChange;
 window.onThemeSelectChange = onThemeSelectChange;
 window.sortTable = sortTable;
 window.toggleGreeksView = toggleGreeksView;

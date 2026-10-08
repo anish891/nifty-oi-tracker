@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { getPool } = require('../services/db');
+const history = require('../services/history');
+const { istNow } = require('../services/market');
 const { fetchRawNSEOptionChain } = require('../services/nse');
 const {
   processOptionChainData,
@@ -13,7 +14,7 @@ router.get('/option-chain', async (req, res) => {
   try {
     const { expiry } = req.query;
     const { raw, allExpiries, targetExpiry } = await fetchRawNSEOptionChain('NIFTY', expiry || null);
-    const data = await processOptionChainData(raw, allExpiries, targetExpiry, getPool());
+    const data = await processOptionChainData(raw, allExpiries, targetExpiry);
     res.json({ ok: true, data });
   } catch (err) {
     console.error('Error fetching option chain:', err.message);
@@ -21,118 +22,58 @@ router.get('/option-chain', async (req, res) => {
   }
 });
 
-router.get('/history', async (req, res) => {
-  const pool = getPool();
-  if (!pool) {
-    return res.status(503).json({ ok: false, error: 'Database connection not configured (DATABASE_URL missing)' });
-  }
-
+// Intraday series + baseline strike snapshots (5m / 15m / 30m earlier, and the open)
+router.get('/intraday', async (req, res) => {
   try {
-    const { startDate, endDate, strike, expiry, limit = 500 } = req.query;
-    let query = 'SELECT * FROM option_chain_snapshots WHERE 1=1';
-    const params = [];
-    let idx = 1;
-
-    if (startDate) {
-      query += ` AND timestamp >= $${idx++}`;
-      params.push(startDate);
-    }
-    if (endDate) {
-      query += ` AND timestamp <= $${idx++}`;
-      params.push(endDate);
-    }
-    if (strike) {
-      query += ` AND strike = $${idx++}`;
-      params.push(parseInt(strike, 10));
-    }
-    if (expiry) {
-      query += ` AND expiry = $${idx++}`;
-      params.push(expiry);
-    }
-
-    query += ` ORDER BY timestamp DESC LIMIT $${idx++}`;
-    params.push(parseInt(limit, 10));
-
-    const { rows } = await pool.query(query, params);
-    res.json({ ok: true, count: rows.length, data: rows });
+    const { expiry, date } = req.query;
+    if (!expiry) return res.status(400).json({ ok: false, error: 'expiry is required' });
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: 'date must be YYYY-MM-DD' });
+    const data = await history.getIntraday(expiry, date || null);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ok: true, backend: history.backend, persistent: history.configured, ...data });
   } catch (err) {
-    console.error('Error fetching history:', err.message);
+    console.error('Error reading intraday history:', err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-router.get('/db-status', async (req, res) => {
-  const pool = getPool();
-  if (!pool) {
-    return res.status(200).json({
-      connected: false,
-      message: 'DATABASE_URL is not set in environment variables.'
-    });
+router.get('/storage-status', (req, res) => {
+  res.json({
+    ok: true,
+    backend: history.backend,
+    persistent: history.configured,
+    message: history.configured
+      ? 'Upstash Redis connected via REST.'
+      : 'No UPSTASH_REDIS_REST_URL / TOKEN set — history is in memory and is lost on restart or cold start.'
+  });
+});
+
+// Records a snapshot even when nobody has the page open. Point an external pinger or
+// Vercel Cron at it during market hours. Protected by CRON_SECRET when that is set.
+router.all('/cron/snapshot', async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (secret) {
+    const given = (req.headers.authorization || '').replace(/^Bearer /, '') || req.query.key;
+    if (given !== secret) return res.status(401).json({ ok: false, error: 'unauthorized' });
   }
-
   try {
-    const tableQuery = `
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-    `;
-    const { rows: tables } = await pool.query(tableQuery);
-
-    const snapshotsCount = await pool.query('SELECT COUNT(*) FROM option_chain_snapshots');
-    const sessionsCount = await pool.query('SELECT COUNT(*) FROM session_summaries');
-
-    res.json({
-      connected: true,
-      tables: tables.map(t => t.table_name),
-      rowCounts: {
-        option_chain_snapshots: parseInt(snapshotsCount.rows[0].count, 10),
-        session_summaries: parseInt(sessionsCount.rows[0].count, 10)
-      }
-    });
+    const { raw, allExpiries, targetExpiry } = await fetchRawNSEOptionChain('NIFTY', req.query.expiry || null);
+    const data = await processOptionChainData(raw, allExpiries, targetExpiry);
+    res.json({ ok: true, expiry: data.expiry, dataAsOf: data.dataAsOf, backend: history.backend, persistent: history.configured });
   } catch (err) {
-    res.status(500).json({
-      connected: false,
-      error: err.message
-    });
+    console.error('Cron snapshot failed:', err.message);
+    res.status(502).json({ ok: false, error: err.message });
   }
 });
 
 router.post('/session-summary', async (req, res) => {
-  const pool = getPool();
-  if (!pool) {
-    return res.status(503).json({ ok: false, error: 'Database connection not configured (DATABASE_URL missing)' });
-  }
-
   try {
     const { raw, allExpiries, targetExpiry } = await fetchRawNSEOptionChain('NIFTY');
-    const data = await processOptionChainData(raw, allExpiries, targetExpiry, pool);
-    const today = new Date().toISOString().slice(0, 10);
+    const data = await processOptionChainData(raw, allExpiries, targetExpiry);
     const vector = extractFeatureVector(data);
-
-    const topStrikes = data.strikes.slice(0, 3).map(s => ({ strike: s.strike, cOI: s.CE?.openInterest || 0, pOI: s.PE?.openInterest || 0 }));
-
-    const query = `
-      INSERT INTO session_summaries 
-      (date, closing_pcr, gex_regime, top_buildup_strikes, cpr_width_type, feature_vector)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (date) DO UPDATE SET
-        closing_pcr = EXCLUDED.closing_pcr,
-        gex_regime = EXCLUDED.gex_regime,
-        top_buildup_strikes = EXCLUDED.top_buildup_strikes,
-        cpr_width_type = EXCLUDED.cpr_width_type,
-        feature_vector = EXCLUDED.feature_vector
-    `;
-
-    await pool.query(query, [
-      today,
-      data.pcr,
-      data.gex?.gexRegime || 'POSITIVE_GAMMA',
-      JSON.stringify(topStrikes),
-      data.cpr?.cprType || 'AVERAGE',
-      JSON.stringify(vector)
-    ]);
-
-    res.json({ ok: true, message: 'Session summary saved successfully', date: today, vector });
+    const date = istNow(new Date(data.dataAsOf || Date.now())).ymd;
+    await history.saveSession(history.buildSessionRecord(data, vector, date));
+    res.json({ ok: true, message: 'Session summary saved successfully', date, vector, persistent: history.configured });
   } catch (err) {
     console.error('Error saving session summary:', err.message);
     res.status(500).json({ ok: false, error: err.message });
@@ -142,18 +83,15 @@ router.post('/session-summary', async (req, res) => {
 router.get('/similar-sessions', async (req, res) => {
   try {
     let liveData = getCacheData();
-    const pool = getPool();
     if (!liveData) {
       const { raw, allExpiries, targetExpiry } = await fetchRawNSEOptionChain('NIFTY');
-      liveData = await processOptionChainData(raw, allExpiries, targetExpiry, pool);
+      liveData = await processOptionChainData(raw, allExpiries, targetExpiry);
     }
     const currentVector = extractFeatureVector(liveData);
 
-    let pastSessions = [];
-    if (pool) {
-      const { rows } = await pool.query('SELECT * FROM session_summaries ORDER BY date DESC LIMIT 100');
-      pastSessions = rows;
-    }
+    // Exclude today's own (possibly just-written) record so a session can't match itself at 100%
+    const today = istNow().ymd;
+    const pastSessions = (await history.getSessions(100)).filter(x => x.date !== today);
 
     if (pastSessions.length === 0) {
       // No stored sessions (DB disabled/empty): say so instead of inventing history.
@@ -161,7 +99,9 @@ router.get('/similar-sessions', async (req, res) => {
         ok: true,
         currentVector,
         topMatches: [],
-        reason: pool ? 'No saved sessions yet' : 'Session history needs a database (DATABASE_URL not set)'
+        reason: history.configured
+          ? 'No saved sessions yet — one is stored automatically after each close'
+          : 'Session history needs storage (set UPSTASH_REDIS_REST_URL / TOKEN)'
       });
     }
 

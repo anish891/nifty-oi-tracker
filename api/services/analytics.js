@@ -1,6 +1,5 @@
-const { saveSnapshotsAsync } = require('./db');
-
 const { getIndexSnapshot, getPivotBasis } = require('./market');
+const history = require('./history');
 
 // ── Tunables (override via env) ──────────────────────────────────────────
 const RISK_FREE_RATE = parseFloat(process.env.RISK_FREE_RATE) || 0.065;
@@ -248,20 +247,10 @@ const MIN_SAMPLES = 5;
 const Z_THRESHOLD = 1.5;
 
 /**
- * Prefers z-score of ATM IV against stored session history (needs a DB).
+ * Prefers z-score of ATM IV against stored session history (pastIvs, newest first).
  * Without history it falls back to India VIX levels — never to made-up numbers.
  */
-async function computeVolatilityRegime(currentAtmIv, pool, vix = null) {
-  let pastIvs = [];
-  if (pool) {
-    try {
-      const { rows } = await pool.query('SELECT atm_iv FROM session_summaries WHERE atm_iv > 0 ORDER BY date DESC LIMIT $1', [WINDOW_SIZE]);
-      pastIvs = rows.map(r => parseFloat(r.atm_iv));
-    } catch (err) {
-      // fall through to VIX
-    }
-  }
-
+async function computeVolatilityRegime(currentAtmIv, pastIvs = [], vix = null) {
   const count = pastIvs.length;
   if (count < MIN_SAMPLES) {
     if (vix && vix.last > 0) {
@@ -401,15 +390,16 @@ function withTimeout(promise, ms) {
 let cache = { data: null, ts: 0, expiry: null };
 const CACHE_TTL = 5000; // 5s TTL (NSE data refreshes every ~30-60s)
 
-async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
+async function processOptionChainData(raw, allExpiries, targetExpiry) {
   const now = Date.now();
   if (cache.data && now - cache.ts < CACHE_TTL && cache.expiry === targetExpiry) {
     return cache.data;
   }
 
-  const [indices, pivotBasis] = await Promise.all([
+  const [indices, pivotBasis, sessions] = await Promise.all([
     withTimeout(getIndexSnapshot(), 2500),
-    withTimeout(getPivotBasis(), 2500)
+    withTimeout(getPivotBasis(), 2500),
+    withTimeout(history.getSessions(20).catch(() => []), 2000)
   ]);
 
   const spot = raw.records.underlyingValue || raw.records.data?.[0]?.CE?.underlyingValue || raw.records.data?.[0]?.PE?.underlyingValue || 0;
@@ -630,7 +620,11 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   const cprTypeVal = classifyCPR(cprCalc.widthPct);
   const gexRegimeVal = totalGexCr >= 0 ? 'POSITIVE_GAMMA' : 'NEGATIVE_GAMMA';
 
-  const volatilityRegime = await computeVolatilityRegime(atmIv, pool, indices?.vix || null);
+  const volatilityRegime = await computeVolatilityRegime(
+    atmIv,
+    (sessions || []).map(x => parseFloat(x.atm_iv)).filter(v => v > 0),
+    indices?.vix || null
+  );
   const compositeRegime = computeCompositeRegime(gexRegimeVal, pcr, cprTypeVal, ivSkew, spot, maxPain);
   const impliedProbability = computeImpliedProbabilityDistribution(allExpiryStrikes, spot, T);
   const mlPredictions = computeIntradayMLPredictions(
@@ -719,7 +713,15 @@ async function processOptionChainData(raw, allExpiries, targetExpiry, pool) {
   };
 
   cache = { data: result, ts: now, expiry: targetExpiry };
-  saveSnapshotsAsync(strikes, targetExpiry, result.fetchedAt);
+
+  // Persist for the intraday buffer / session history. Never let storage trouble break the response.
+  try {
+    await withTimeout(history.recordSnapshot(result, extractFeatureVector(result)).catch(err => {
+      console.error('History write failed:', err.message);
+    }), 1500);
+  } catch (err) {
+    console.error('History write failed:', err.message);
+  }
   return result;
 }
 

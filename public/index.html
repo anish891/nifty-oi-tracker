@@ -10,7 +10,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap"
     rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
@@ -405,8 +405,8 @@
         <div class="metric-sub-stats"
           style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
           <span>Near: <strong id="mNtmPcr">—</strong> | Vol: <strong id="mVolPcr">—</strong></span>
-          <span title="PCR Rate of Change (3m & 5m windows)">PCR RoC: <span id="mPcrRoc" style="font-weight: 600;">3m: —
-              | 5m: —</span></span>
+          <span title="PCR change over the last 5 and 15 minutes">PCR RoC: <span id="mPcrRoc" style="font-weight: 600;">5m: —
+              | 15m: —</span></span>
         </div>
       </div>
     </div>
@@ -429,10 +429,10 @@
         </div>
         <div class="metric-sub-stats"
           style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
-          <span title="Call OI Velocity (3-min & 5-min RoC)">CE RoC: <span id="mCallRoc" style="font-weight: 600;">3m: —
-              | 5m: —</span></span>
-          <span title="Put OI Velocity (3-min & 5-min RoC)">PE RoC: <span id="mPutRoc" style="font-weight: 600;">3m: — |
-              5m: —</span></span>
+          <span title="Call OI change over the last 5 and 15 minutes">CE RoC: <span id="mCallRoc" style="font-weight: 600;">5m: —
+              | 15m: —</span></span>
+          <span title="Put OI change over the last 5 and 15 minutes">PE RoC: <span id="mPutRoc" style="font-weight: 600;">5m: —
+              | 15m: —</span></span>
         </div>
       </div>
     </div>
@@ -529,6 +529,37 @@
         <div id="similarSessionsList" style="display:flex; flex-direction:column; gap:6px; font-size:11px;">
           <div style="color:var(--muted); text-align:center; padding:10px;">Matching sessions...</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTRADAY TIMELINE (persisted snapshots) -->
+  <div id="timelineSection" class="section">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 8-9M3 21h18"/></svg>
+          Intraday Timeline
+          <span id="historyChip" class="pill pill-accent">History: —</span>
+        </div>
+        <label class="panel-note" style="display:flex; align-items:center; gap:6px;">
+          Overlay
+          <select id="timelineMetric" onchange="onTimelineMetricChange()">
+            <option value="pcr" selected>PCR</option>
+            <option value="volPcr">Volume PCR</option>
+            <option value="straddle">ATM Straddle</option>
+            <option value="atmIv">ATM IV</option>
+            <option value="ivSkew">IV Skew (25Δ RR)</option>
+            <option value="vix">India VIX</option>
+            <option value="gexCr">Net GEX (Cr)</option>
+            <option value="callOI">Total Call OI</option>
+            <option value="putOI">Total Put OI</option>
+          </select>
+        </label>
+      </div>
+      <div style="position:relative; height:230px;">
+        <canvas id="timelineChart"></canvas>
+        <div id="timelineEmpty" class="timeline-empty">Collecting snapshots…</div>
       </div>
     </div>
   </div>

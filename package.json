@@ -6,13 +6,12 @@
   "scripts": {
     "start": "node api/index.js",
     "dev": "node api/index.js",
-    "test": "node api/verify-calculations.js"
+    "test": "node api/verify-calculations.js && node api/verify-history.js"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^4.18.2",
-    "node-fetch": "^2.7.0",
-    "pg": "^8.22.0"
+    "node-fetch": "^2.7.0"
   },
   "engines": {
     "node": ">=18"

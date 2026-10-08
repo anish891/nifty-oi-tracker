@@ -17,3 +17,10 @@ export async function fetchSimilarSessionsData() {
   if (!json.ok || !json.topMatches) return { topMatches: [], reason: json.error };
   return { topMatches: json.topMatches, reason: json.reason };
 }
+
+export async function fetchIntradayData(expiry) {
+  const r = await fetch(`/api/intraday?expiry=${encodeURIComponent(expiry)}`);
+  const json = await r.json();
+  if (!json.ok) throw new Error(json.error);
+  return json;
+}

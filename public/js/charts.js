@@ -156,3 +156,53 @@ export function renderProbabilityChart(canvasId, pdfData, spotPrice) {
   });
 }
 
+
+let timelineChart = null;
+
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+const istHm = t => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+
+/** Spot on the left axis, one selectable metric on the right. Updates in place to avoid flicker. */
+export function renderTimelineChart(canvasId, points, metricKey, metricLabel) {
+  if (!window.Chart) return;
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const labels = points.map(p => istHm(p.t));
+  const spot = points.map(p => p.spot);
+  const metric = points.map(p => (p[metricKey] === undefined ? null : p[metricKey]));
+  const accent = cssVar('--accent') || '#3b82f6';
+  const warn = cssVar('--warn') || '#f59e0b';
+  const muted = cssVar('--muted') || '#6b7280';
+  const grid = cssVar('--border') || 'rgba(255,255,255,0.07)';
+
+  if (!timelineChart) {
+    timelineChart = new window.Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels, datasets: [] },
+      options: {
+        animation: false,
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        elements: { point: { radius: 0, hoverRadius: 4 }, line: { borderWidth: 2, tension: 0.2 } },
+        plugins: { legend: { labels: { color: muted, boxWidth: 10, font: { size: 11 } } } },
+        scales: { x: { ticks: { color: muted, maxTicksLimit: 8, font: { size: 10 } }, grid: { color: grid } } }
+      }
+    });
+  }
+
+  const chart = timelineChart;
+  chart.data.labels = labels;
+  chart.data.datasets = [
+    { label: 'Spot', data: spot, borderColor: accent, yAxisID: 'y' },
+    { label: metricLabel, data: metric, borderColor: warn, yAxisID: 'y1', spanGaps: true }
+  ];
+  chart.options.plugins.legend.labels.color = muted;
+  chart.options.scales.x.ticks.color = muted;
+  chart.options.scales.x.grid.color = grid;
+  chart.options.scales.y = { position: 'left', ticks: { color: accent, font: { size: 10 } }, grid: { color: grid } };
+  chart.options.scales.y1 = { position: 'right', ticks: { color: warn, font: { size: 10 } }, grid: { drawOnChartArea: false } };
+  chart.update('none');
+}
