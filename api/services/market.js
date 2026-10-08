@@ -5,6 +5,7 @@ const { getCookies, fetchWithTimeout } = require('./nse');
 // previous completed session's OHLC (for real CPR/pivots) from Yahoo Finance.
 // Every function resolves to null on failure so analytics can degrade gracefully.
 
+
 const INDICES_TTL = 15 * 1000;
 const OHLC_TTL = 30 * 60 * 1000;
 
