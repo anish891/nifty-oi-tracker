@@ -46,6 +46,25 @@ export function hideOverlay() {
   if (overlay) overlay.classList.add('hidden');
 }
 
+function updateKeyStrip(d) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('ksSpot', fmt(d.spot));
+  set('ksAtm', fmt(d.atm));
+  set('ksPcr', d.pcr.toFixed(2));
+  set('ksRegime', d.compositeRegime ? d.compositeRegime.regimeLabel : '—');
+  document.body.classList.remove('is-loading');
+  updateAge();
+}
+
+function updateAge() {
+  const el = document.getElementById('ksAge');
+  if (!el || !currentData) return;
+  const sec = Math.max(0, Math.round((Date.now() - new Date(currentData.fetchedAt).getTime()) / 1000));
+  el.textContent = sec < 90 ? sec + 's ago' : Math.round(sec / 60) + 'm ago';
+  el.classList.toggle('stale', sec > 120 && isMarketOpen());
+}
+setInterval(updateAge, 1000);
+
 export function renderAll() {
   if (!currentData) return;
   const d = currentData;
@@ -59,6 +78,8 @@ export function renderAll() {
   }
   const expLabel = document.getElementById('expiryLabel');
   if (expLabel) expLabel.textContent = d.expiry;
+
+  updateKeyStrip(d);
 
   // Metrics
   document.getElementById('mSpot').textContent = fmt(d.spot);
@@ -257,7 +278,7 @@ export function renderAll() {
     const biasBadge = document.getElementById('tacticalBiasBadge');
     if (biasBadge) {
       biasBadge.textContent = 'Bias: ' + cr.tacticalBias.replace('_', ' ');
-      biasBadge.className = 'val ' + (
+      biasBadge.className = 'bias-badge ' + (
         cr.tacticalBias.includes('BULLISH') ? 'bull' :
           cr.tacticalBias.includes('BEARISH') ? 'bear' : 'warn'
       );
@@ -1287,6 +1308,18 @@ window.closeExportMenu = closeExportMenu;
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  document.body.classList.add('is-loading');
+  const tb = document.querySelector('.topbar');
+  const syncTopbar = () => tb && document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');
+  syncTopbar();
+  window.addEventListener('resize', syncTopbar);
+  const adv = document.getElementById('advancedAnalytics');
+  if (adv) {
+    try { adv.open = localStorage.getItem('advOpen') === '1'; } catch (e) { /* storage unavailable */ }
+    adv.addEventListener('toggle', () => {
+      try { localStorage.setItem('advOpen', adv.open ? '1' : '0'); } catch (e) { /* ignore */ }
+    });
+  }
   fetchNow();
   startAutoRefresh();
 });
