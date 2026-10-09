@@ -25,10 +25,8 @@
     <a href="/" target="_blank" rel="noopener noreferrer" class="logo">Nifty <span>OI</span> Tracker</a>
     <div class="live-dot" id="liveDot"></div>
     <div class="status-text" id="statusText">Connecting…</div>
-    <div class="health" id="healthChips" aria-label="Data source health"></div>
 
     <div class="topbar-right">
-      <button class="shortcuts-btn" type="button" onclick="toggleShortcuts()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
       <button class="bell-btn" id="alertBell" onclick="toggleAlertsDrawer()" title="Alerts" aria-label="Open alerts">
         <svg class="ico" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
         <span class="bell-badge" id="alertBadge" hidden>0</span>
@@ -546,7 +544,6 @@
         <div class="panel-title">
           <svg class="ico" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>
           OI Structure by Strike
-          <span id="oiReplayBadge" class="pill pill-replay" hidden>Replay</span>
         </div>
         <label class="panel-note" style="display:flex; align-items:center; gap:6px;">
           View
@@ -595,11 +592,6 @@
       <div style="position:relative; height:230px;">
         <canvas id="timelineChart"></canvas>
         <div id="timelineEmpty" class="timeline-empty">Collecting snapshots…</div>
-      </div>
-      <div class="replay-bar" id="replayBar">
-        <button type="button" id="replayLive" class="replay-live" onclick="replayGoLive()" hidden>● Back to live</button>
-        <input type="range" id="replaySlider" min="0" max="0" value="0" step="1" disabled aria-label="Replay the trading day">
-        <span id="replayLabel" class="replay-label">Live</span>
       </div>
     </div>
   </div>
@@ -685,18 +677,7 @@
     <div class="countdown">Next refresh in <span id="cdTimer">3</span>s</div>
   </div>
 
-    <div id="shortcutsHelp" hidden>
-    <h4>Keyboard shortcuts</h4>
-    <div><span>Refresh now</span><kbd>R</kbd></div>
-    <div><span>Alerts</span><kbd>A</kbd></div>
-    <div><span>Greeks columns</span><kbd>G</kbd></div>
-    <div><span>Cycle theme</span><kbd>T</kbd></div>
-    <div><span>Replay: back to live</span><kbd>L</kbd></div>
-    <div><span>Close panels</span><kbd>Esc</kbd></div>
-    <div><span>This help</span><kbd>?</kbd></div>
-  </div>
-
-<script type="module" src="/js/app.js"></script>
+  <script type="module" src="/js/app.js"></script>
 </body>
 
 </html>

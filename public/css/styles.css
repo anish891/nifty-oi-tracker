@@ -1720,8 +1720,7 @@ body.exporting-pdf #alertToasts {
     bottom: 64px;
   }
 }
-
-/* ═════════ Strike detail drawer, replay, health chips ═════════ */
+/* ═════════ Strike detail drawer ═════════ */
 .side-backdrop {
   position: fixed;
   inset: 0;
@@ -1862,148 +1861,7 @@ body.exporting-pdf #alertToasts {
   text-decoration-color: var(--accent);
 }
 
-/* Replay bar under the timeline */
-.replay-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.replay-bar input[type="range"] {
-  flex: 1;
-  accent-color: var(--accent);
-}
-
-.replay-label {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-  min-width: 150px;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.replay-label.active {
-  color: var(--warn);
-  font-weight: 700;
-}
-
-.replay-live[hidden] {
-  display: none;
-}
-
-.pill-replay {
-  background: var(--warn-soft);
-  color: var(--warn);
-  margin-left: 8px;
-}
-
-.pill-replay[hidden] {
-  display: none;
-}
-
-/* Data-source health */
-.health {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.hchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--muted);
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  cursor: help;
-}
-
-.hchip i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.hchip.ok i {
-  background: var(--bull);
-}
-
-.hchip.warn i {
-  background: var(--warn);
-}
-
-.hchip.bad i {
-  background: var(--bear);
-}
-
-/* Keyboard shortcuts help */
-#shortcutsHelp {
-  position: fixed;
-  right: 16px;
-  bottom: 56px;
-  z-index: 190;
-  width: min(300px, calc(100vw - 32px));
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  padding: 12px 14px;
-  box-shadow: var(--shadow);
-  font-size: 12px;
-}
-
-#shortcutsHelp[hidden] {
-  display: none;
-}
-
-#shortcutsHelp h4 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-
-#shortcutsHelp div {
-  display: flex;
-  justify-content: space-between;
-  padding: 3px 0;
-}
-
-kbd {
-  font-family: var(--mono);
-  font-size: 11px;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 4px;
-  padding: 0 6px;
-}
-
-.shortcuts-btn {
-  padding: 5px 9px;
-  font-family: var(--mono);
-}
-
 @media (max-width: 720px) {
-  .replay-bar {
-    flex-wrap: wrap;
-  }
-
-  .replay-label {
-    flex-basis: 100%;
-    min-width: 0;
-    text-align: left;
-  }
-
-  .health {
-    flex-basis: 100%;
-  }
-
   .sp-stats {
     grid-template-columns: 1fr 1fr;
   }

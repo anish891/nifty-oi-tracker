@@ -56,9 +56,6 @@ const mk = (minOffset, callOI) => {
 
   // snapshot + strike-history reads
   const lastPoint = out.points.at(-1);
-  const snap = await history.getSnapshotStrikes('13-Oct-2026', lastPoint.t);
-  assert(Array.isArray(snap) && snap[0].strike === 22250 && snap[0].ceOI === (3e6 + 40 * 1e4) / 100, 'snapshot rows are decoded into named fields');
-  assert.strictEqual(await history.getSnapshotStrikes('13-Oct-2026', 12345), null, 'unknown snapshot → null');
   const sh = await history.getStrikeHistory('13-Oct-2026', 22250, null, 10);
   assert(sh.samples.length <= 11 && sh.samples.length >= 8, `sampled to ~10, got ${sh.samples.length}`);
   assert.strictEqual(sh.samples[0].t, out.points[0].t, 'includes the first snapshot');

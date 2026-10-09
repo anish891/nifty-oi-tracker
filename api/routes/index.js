@@ -40,24 +40,6 @@ router.get('/intraday', async (req, res) => {
 const EXPIRY_RE = /^\d{2}-[A-Za-z]{3}-\d{4}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Per-strike table for one stored snapshot (immutable once written → safe to cache hard)
-router.get('/snapshot', async (req, res) => {
-  const { expiry } = req.query;
-  const t = Number(req.query.t);
-  if (!EXPIRY_RE.test(expiry || '') || !Number.isInteger(t) || t <= 0) {
-    return res.status(400).json({ ok: false, error: 'expiry (DD-Mon-YYYY) and integer t are required' });
-  }
-  try {
-    const strikes = await history.getSnapshotStrikes(expiry, t);
-    if (!strikes) return res.status(404).json({ ok: false, error: 'snapshot not found (expired or never recorded)' });
-    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400, immutable');
-    res.json({ ok: true, expiry, t, strikes });
-  } catch (err) {
-    console.error('Error reading snapshot:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
 // One strike across the day (sampled)
 router.get('/strike-history', async (req, res) => {
   const { expiry, date } = req.query;

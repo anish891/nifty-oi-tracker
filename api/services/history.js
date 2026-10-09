@@ -160,13 +160,6 @@ async function getIntraday(expiry, date = null) {
 const COLS = ['strike', 'ceOI', 'peOI', 'ceChg', 'peChg', 'ceLtp', 'peLtp', 'ceIv', 'peIv'];
 const rowToObject = r => Object.fromEntries(COLS.map((c, i) => [c, r[i]]));
 
-/** Per-strike table stored for one snapshot (null if that snapshot has expired / never existed). */
-async function getSnapshotStrikes(expiry, t) {
-  const raw = await store.get(`oi:k:${expiry}:${t}`);
-  const rows = raw ? safeParse(raw) : null;
-  return rows ? rows.map(rowToObject) : null;
-}
-
 /**
  * One strike's OI / price / IV across the day, sampled to at most `maxSamples` snapshots
  * (always including the first and last) so a drill-down costs ~60 reads, not ~400.
@@ -198,7 +191,6 @@ module.exports = {
   configured: store.configured,
   recordSnapshot,
   getIntraday,
-  getSnapshotStrikes,
   getStrikeHistory,
   getSessions,
   saveSession,

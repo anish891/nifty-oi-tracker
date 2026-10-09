@@ -90,13 +90,9 @@ Check status any time at `/api/storage-status`.
 (e.g. cron-job.org) or Vercel Cron on a plan that allows per-minute crons (Hobby only allows daily). Set `CRON_SECRET`
 to require `Authorization: Bearer <secret>` (or `?key=<secret>`).
 
-### Using the history
+### Strike detail
 
-- **Replay slider** (under the Intraday Timeline): drag through the stored day and the OI-by-strike chart redraws as it looked at that minute. *Back to live* (or `L`) returns.
-- **Strike detail**: click a strike in the option chain, or a bar in the OI chart, to see that strike's call/put OI, premium and IV across the session.
-- **Shareable links**: the expiry, OI view and timeline overlay are kept in the URL, e.g. `/?expiry=13-Oct-2026&view=m15&overlay=vix`. An expiry that no longer exists is ignored.
-- **Data-health chips** in the top bar show whether NSE data is fresh and whether VIX, previous-session pivots and persistent history are actually available (hover for details).
-- **Keyboard**: `R` refresh · `A` alerts · `G` greeks · `T` theme · `L` back to live · `?` help · `Esc` close panels.
+Click a strike in the option chain, or a bar in the OI chart, to see that strike's call/put OI, premium and IV across the stored session (needs the Upstash history above).
 
 Optional env: `NIFTY_LOT_SIZE` (GEX scaling, default 65), `RISK_FREE_RATE` (default 0.065).
 
