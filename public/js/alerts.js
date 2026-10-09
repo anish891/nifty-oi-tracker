@@ -1,20 +1,24 @@
-import { DEFAULT_SETTINGS, mergeSettings, evaluateRules } from './alert-rules.js';
+import { DEFAULT_SETTINGS, mergeSettings, createAlertEngine } from './alert-rules.js';
 
-// Alerts UI: evaluates rules on every new snapshot, then delivers via toast, bell log, optional
-// sound and optional desktop notification. Settings and the log live in localStorage only.
+// Alerts UI. The rule engine decides *what* happened and what deserves to interrupt (alert-rules.js);
+// this file only delivers it: log, toast, optional sound / desktop notification, plus snooze.
+// Settings, log and snooze live in localStorage only.
 
 const SETTINGS_KEY = 'alertSettings';
 const LOG_KEY = 'alertLog';
+const SNOOZE_KEY = 'alertSnoozeUntil';
 const LOG_MAX = 100;
+const TOAST_TTL = { info: 6000, warn: 9000, high: 14000 };
+const SWIPE_DISMISS_PX = 70;
 
 let settings = loadSettings();
 let log = loadLog();
-let ruleState = null;
+let snoozeUntil = loadSnooze();
+const engine = createAlertEngine();
 let unread = 0;
 let hiddenCount = 0;
 let baseTitle = '';
 let audioCtx = null;
-const lastFired = new Map(); // event key -> timestamp (cooldown)
 
 function loadSettings() {
   try { return mergeSettings(JSON.parse(localStorage.getItem(SETTINGS_KEY))); } catch (e) { return mergeSettings(null); }
@@ -31,9 +35,19 @@ function loadLog() {
 function saveLog() {
   try { localStorage.setItem(LOG_KEY, JSON.stringify(log.slice(0, LOG_MAX))); } catch (e) { /* ignore */ }
 }
+function loadSnooze() {
+  try { return Number(localStorage.getItem(SNOOZE_KEY)) || 0; } catch (e) { return 0; }
+}
+function saveSnooze() {
+  try { localStorage.setItem(SNOOZE_KEY, String(snoozeUntil)); } catch (e) { /* ignore */ }
+}
 
 export function alertsEnabled() {
   return settings.enabled;
+}
+
+function isSnoozed() {
+  return Date.now() < snoozeUntil;
 }
 
 // ── Delivery ─────────────────────────────────────────────────────────────
@@ -57,29 +71,127 @@ function desktopNotify(ev) {
   if (!settings.desktop || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   // The toast already covers a focused window; only interrupt when the user is elsewhere.
   if (document.hasFocus() && !document.hidden) return;
-  try { new Notification(ev.title, { body: ev.body, tag: ev.key }); } catch (e) { /* ignore */ }
+  try {
+    const n = new Notification(ev.title, { body: ev.body, tag: ev.key });
+    setTimeout(() => n.close(), 8000); // don't let them pile up in the notification centre
+  } catch (e) { /* ignore */ }
+}
+
+// ── Toasts ───────────────────────────────────────────────────────────────
+
+function toastHost() {
+  return document.getElementById('alertToasts');
+}
+
+function removeToast(el) {
+  if (!el || !el.isConnected) return;
+  el.classList.add('leaving');
+  setTimeout(() => { el.remove(); syncDismissAll(); }, 160);
+}
+
+function syncDismissAll() {
+  const host = toastHost();
+  const btn = document.getElementById('alertDismissAll');
+  if (!host || !btn) return;
+  btn.hidden = host.querySelectorAll('.alert-toast:not(.leaving)').length < 2;
+}
+
+function dismissAllToasts() {
+  toastHost()?.querySelectorAll('.alert-toast').forEach(removeToast);
+}
+
+/** Drag a toast sideways to dismiss it (touch, pen and mouse); a tap or ✕ also closes it. */
+function attachSwipe(el) {
+  let startX = null;
+  let dx = 0;
+  el.addEventListener('pointerdown', e => {
+    if (e.target.closest('.at-close')) return;
+    startX = e.clientX;
+    dx = 0;
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('dragging');
+  });
+  el.addEventListener('pointermove', e => {
+    if (startX === null) return;
+    dx = e.clientX - startX;
+    el.style.transform = `translateX(${dx}px)`;
+    el.style.opacity = String(Math.max(0.2, 1 - Math.abs(dx) / 220));
+  });
+  const end = () => {
+    if (startX === null) return;
+    const moved = Math.abs(dx);
+    startX = null;
+    el.classList.remove('dragging');
+    if (moved >= SWIPE_DISMISS_PX) {
+      el.style.transform = `translateX(${dx > 0 ? 400 : -400}px)`;
+      el.style.opacity = '0';
+      setTimeout(() => { el.remove(); syncDismissAll(); }, 160);
+    } else {
+      el.style.transform = '';
+      el.style.opacity = '';
+      if (moved < 6) removeToast(el); // a tap
+    }
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', () => {
+    startX = null;
+    el.classList.remove('dragging');
+    el.style.transform = '';
+    el.style.opacity = '';
+  });
 }
 
 function toast(ev) {
-  const host = document.getElementById('alertToasts');
+  const host = toastHost();
   if (!host) return;
   // The open drawer already shows the new entry; a toast on top of it is just noise.
   const drawer = document.getElementById('alertsDrawer');
   if (drawer && drawer.classList.contains('open')) return;
+
   const el = document.createElement('div');
   el.className = `alert-toast sev-${ev.severity}`;
+  el.dataset.born = String(Date.now());
+  el.dataset.ttl = String(TOAST_TTL[ev.severity] || TOAST_TTL.warn);
+  el.setAttribute('role', 'status');
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'at-close';
+  close.setAttribute('aria-label', 'Dismiss alert');
+  close.textContent = '✕';
+  close.addEventListener('click', e => { e.stopPropagation(); removeToast(el); });
+
   const t = document.createElement('div');
   t.className = 'at-title';
   t.textContent = ev.title;
   const b = document.createElement('div');
   b.className = 'at-body';
   b.textContent = ev.body;
-  el.append(t, b);
-  el.addEventListener('click', () => el.remove());
+  el.append(close, t, b);
+
+  // Hovering / touching pauses the countdown so a toast can be read without racing it.
+  el.addEventListener('pointerenter', () => { el.dataset.paused = '1'; });
+  el.addEventListener('pointerleave', () => { delete el.dataset.paused; el.dataset.born = String(Date.now()); });
+
+  attachSwipe(el);
   host.prepend(el);
-  while (host.children.length > 4) host.lastChild.remove();
-  setTimeout(() => el.remove(), ev.severity === 'high' ? 15000 : 8000);
+  const maxVisible = window.matchMedia('(max-width: 720px)').matches ? 2 : 3;
+  [...host.querySelectorAll('.alert-toast')].slice(maxVisible).forEach(x => x.remove());
+  syncDismissAll();
 }
+
+/** Remove expired toasts. Runs on an interval *and* when the tab returns, since background timers are throttled. */
+function sweepToasts() {
+  const host = toastHost();
+  if (!host) return;
+  const now = Date.now();
+  host.querySelectorAll('.alert-toast').forEach(el => {
+    if (el.dataset.paused) return;
+    if (now - Number(el.dataset.born) > Number(el.dataset.ttl)) removeToast(el);
+  });
+}
+
+// ── Badges, snooze, delivery entry point ─────────────────────────────────
 
 function updateBadges() {
   const badge = document.getElementById('alertBadge');
@@ -87,37 +199,45 @@ function updateBadges() {
     badge.textContent = unread > 99 ? '99+' : String(unread);
     badge.hidden = unread === 0;
   }
+  const bell = document.getElementById('alertBell');
+  if (bell) {
+    const snoozed = isSnoozed();
+    bell.classList.toggle('snoozed', snoozed);
+    bell.title = snoozed ? `Alerts snoozed until ${new Date(snoozeUntil).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}` : 'Alerts';
+  }
   document.title = hiddenCount > 0 ? `(${hiddenCount}) ${baseTitle}` : baseTitle;
 }
 
-function fire(ev) {
-  const entry = { ...ev, t: Date.now() };
-  log.unshift(entry);
+function logEvent(ev) {
+  log.unshift({ ...ev, t: Date.now() });
   log = log.slice(0, LOG_MAX);
-  saveLog();
   unread += 1;
   if (document.hidden) hiddenCount += 1;
+}
+
+function interrupt(ev) {
   toast(ev);
   if (settings.sound) beep(ev.severity);
   desktopNotify(ev);
+}
+
+/** Called once per *new* snapshot. */
+export function processAlerts(d, ctx = {}) {
+  const { fired, notify } = engine.process(d, ctx, settings);
+  if (fired.length === 0) return;
+  fired.forEach(logEvent);
+  saveLog();
+  if (!isSnoozed()) notify.forEach(interrupt);
   updateBadges();
   renderLog();
 }
 
-/** Called once per *new* snapshot. Always advances state so enabling alerts never replays old news. */
-export function processAlerts(d, ctx = {}) {
-  const { events, next } = evaluateRules(ruleState, d, ctx, settings);
-  ruleState = next;
-  if (!settings.enabled) return;
-
-  const now = Date.now();
-  const cooldown = settings.cooldownMin * 60 * 1000;
-  events.forEach(ev => {
-    const last = lastFired.get(ev.key);
-    if (last && now - last < cooldown) return;
-    lastFired.set(ev.key, now);
-    fire(ev);
-  });
+export function snoozeAlerts(minutes) {
+  snoozeUntil = minutes > 0 ? Date.now() + minutes * 60000 : 0;
+  saveSnooze();
+  if (minutes > 0) dismissAllToasts();
+  updateBadges();
+  renderSnooze();
 }
 
 // ── Drawer UI ────────────────────────────────────────────────────────────
@@ -166,6 +286,29 @@ function renderLog() {
     row.append(top, body);
     host.append(row);
   });
+}
+
+function renderSnooze() {
+  const host = document.getElementById('alertSnooze');
+  if (!host) return;
+  host.textContent = '';
+  const mk = (text, onClick, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.className = cls;
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  const label = document.createElement('span');
+  label.className = 'snooze-label';
+  if (isSnoozed()) {
+    label.textContent = `Snoozed until ${new Date(snoozeUntil).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })} (still logged)`;
+    host.append(label, mk('Resume', () => snoozeAlerts(0)));
+  } else {
+    label.textContent = 'Mute pop-ups:';
+    host.append(label, mk('15 min', () => snoozeAlerts(15)), mk('1 hour', () => snoozeAlerts(60)), mk('Rest of day', () => snoozeAlerts(8 * 60)));
+  }
 }
 
 function permissionText() {
@@ -230,6 +373,23 @@ function renderSettings() {
 
   host.append(heading('Delivery'));
   host.append(mkCheck('Enable alerts', settings.enabled, v => { settings.enabled = v; saveSettings(); }));
+
+  const level = document.createElement('label');
+  level.className = 'as-num';
+  const levelText = document.createElement('span');
+  levelText.textContent = 'Pop up / beep / notify for';
+  const sel = document.createElement('select');
+  [['info', 'Everything'], ['warn', 'Warnings and above'], ['high', 'High severity only']].forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = t;
+    o.selected = settings.notifyLevel === v;
+    sel.append(o);
+  });
+  sel.addEventListener('change', () => { settings.notifyLevel = sel.value; saveSettings(); });
+  level.append(levelText, sel);
+  host.append(level);
+
   host.append(mkCheck('Play a sound', settings.sound, v => {
     settings.sound = v;
     saveSettings();
@@ -263,9 +423,14 @@ function renderSettings() {
   const actions = document.createElement('div');
   actions.className = 'as-actions';
   actions.append(
-    button('Send test alert', () => fire({
-      key: 'test', severity: 'warn', title: 'Test alert', body: 'If you can see this (and hear it, if sound is on), alerts are working.'
-    })),
+    button('Send test alert', () => {
+      const ev = { key: 'test', severity: 'warn', title: 'Test alert', body: 'If you can see this (and hear it, if sound is on), alerts are working.' };
+      logEvent(ev);
+      saveLog();
+      updateBadges();
+      renderLog();
+      interrupt(ev);
+    }),
     button('Reset to defaults', () => {
       settings = mergeSettings(DEFAULT_SETTINGS);
       saveSettings();
@@ -276,7 +441,7 @@ function renderSettings() {
 
   const note = document.createElement('p');
   note.className = 'as-note';
-  note.textContent = 'Alerts are evaluated in this browser on each new NSE snapshot (about once a minute), so they only fire while a dashboard tab is open. Settings and the log are stored in this browser only.';
+  note.textContent = 'Alerts are evaluated in this browser on each new NSE snapshot (about once a minute), so they only fire while a dashboard tab is open. A change must hold for two snapshots before it alerts, and values hovering near a threshold stay quiet. Settings and the log are stored in this browser only.';
   host.append(note);
 }
 
@@ -292,14 +457,48 @@ export function toggleAlertsDrawer(force) {
   const open = typeof force === 'boolean' ? force : !drawer.classList.contains('open');
   drawer.classList.toggle('open', open);
   drawer.setAttribute('aria-hidden', String(!open));
+  document.getElementById('alertsBackdrop')?.classList.toggle('open', open);
   if (open) {
     unread = 0;
     hiddenCount = 0;
-    document.getElementById('alertToasts')?.replaceChildren();
+    dismissAllToasts();
     updateBadges();
     renderLog();
     renderSettings();
+    renderSnooze();
   }
+}
+
+/** Drag the open drawer to the right to close it. */
+function attachDrawerSwipe(drawer) {
+  let startX = null;
+  let startY = null;
+  let dx = 0;
+  drawer.addEventListener('pointerdown', e => {
+    if (e.target.closest('input, select, textarea, button, label')) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    dx = 0;
+  });
+  drawer.addEventListener('pointermove', e => {
+    if (startX === null) return;
+    dx = e.clientX - startX;
+    if (Math.abs(e.clientY - startY) > Math.abs(dx)) return; // vertical scroll, not a swipe
+    if (dx > 0) {
+      drawer.classList.add('dragging');
+      drawer.style.transform = `translateX(${dx}px)`;
+    }
+  });
+  const end = () => {
+    if (startX === null) return;
+    const shouldClose = dx > 90;
+    startX = null;
+    drawer.classList.remove('dragging');
+    drawer.style.transform = '';
+    if (shouldClose) toggleAlertsDrawer(false);
+  };
+  drawer.addEventListener('pointerup', end);
+  drawer.addEventListener('pointercancel', end);
 }
 
 export function initAlerts() {
@@ -308,6 +507,17 @@ export function initAlerts() {
   const toasts = document.createElement('div');
   toasts.id = 'alertToasts';
   toasts.setAttribute('aria-live', 'polite');
+  const dismissAll = document.createElement('button');
+  dismissAll.type = 'button';
+  dismissAll.id = 'alertDismissAll';
+  dismissAll.textContent = 'Dismiss all';
+  dismissAll.hidden = true;
+  dismissAll.addEventListener('click', dismissAllToasts);
+  toasts.append(dismissAll);
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'alertsBackdrop';
+  backdrop.addEventListener('click', () => toggleAlertsDrawer(false));
 
   const drawer = document.createElement('aside');
   drawer.id = 'alertsDrawer';
@@ -321,21 +531,28 @@ export function initAlerts() {
       </div>
       <button type="button" class="ad-close" aria-label="Close alerts">✕</button>
     </div>
+    <div id="alertSnooze" class="ad-snooze"></div>
     <div id="alertLogPane">
       <div class="ad-toolbar"><button type="button" id="alertClear">Clear log</button></div>
       <div id="alertLogList"></div>
     </div>
     <div id="alertSettingsPane" hidden></div>`;
-  document.body.append(toasts, drawer);
+  document.body.append(backdrop, toasts, drawer);
 
   drawer.querySelector('.ad-close').addEventListener('click', () => toggleAlertsDrawer(false));
   drawer.querySelectorAll('.ad-tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
   drawer.querySelector('#alertClear').addEventListener('click', () => { log = []; saveLog(); renderLog(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleAlertsDrawer(false); });
+  attachDrawerSwipe(drawer);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { toggleAlertsDrawer(false); dismissAllToasts(); } });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && hiddenCount) { hiddenCount = 0; updateBadges(); }
+    if (!document.hidden) {
+      if (hiddenCount) { hiddenCount = 0; updateBadges(); }
+      sweepToasts();
+    }
   });
+  setInterval(sweepToasts, 1000);
 
   renderLog();
+  renderSnooze();
   updateBadges();
 }

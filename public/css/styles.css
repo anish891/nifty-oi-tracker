@@ -1605,3 +1605,118 @@ body.exporting-pdf #alertsDrawer,
 body.exporting-pdf #alertToasts {
   display: none !important;
 }
+
+/* ═════════ Alerts: dismissal, backdrop, snooze ═════════ */
+#alertToasts {
+  align-items: stretch;
+}
+
+.alert-toast {
+  position: relative;
+  padding-right: 34px;
+  touch-action: pan-y;
+  user-select: none;
+  transition: transform 0.16s ease, opacity 0.16s ease;
+}
+
+.alert-toast.dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
+.alert-toast.leaving {
+  opacity: 0;
+  transform: translateX(24px);
+}
+
+.at-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 24px;
+  border-radius: 6px;
+}
+
+.at-close:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+#alertDismissAll {
+  pointer-events: auto;
+  align-self: flex-end;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+#alertDismissAll[hidden] {
+  display: none;
+}
+
+#alertsBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#alertsBackdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#alertsDrawer {
+  touch-action: pan-y;
+}
+
+#alertsDrawer.dragging {
+  transition: none;
+}
+
+.ad-snooze {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.snooze-label {
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.ad-snooze button {
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
+.bell-btn.snoozed {
+  opacity: 0.55;
+}
+
+.as-num select {
+  max-width: 190px;
+}
+
+@media (max-width: 720px) {
+  #alertToasts {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    bottom: 64px;
+  }
+}

@@ -432,6 +432,15 @@ async function processOptionChainData(raw, allExpiries, targetExpiry) {
   const isNewSnapshot = nseTs === null || flowState.lastTs[targetExpiry] !== nseTs;
   flowState.lastTs[targetExpiry] = nseTs;
 
+  // Increments are only meaningful between *adjacent* snapshots. A serverless instance that sat idle
+  // (or a restart after a long gap) would otherwise treat 30 minutes of volume as one minute's and
+  // flag everything as a surge — so score only when the previous snapshot is 0.5–4 minutes old,
+  // and normalise to per-minute rates so a skipped snapshot (2 min apart) doesn't look like a spike.
+  const snapMs = Date.parse(parseNseTimestamp(nseTs) || '') || now;
+  const MIN_GAP_MIN = 0.5;
+  const MAX_GAP_MIN = 4;
+  const FLOW_MAX_DIST = 0.03; // ignore flow >3% away from spot: irrelevant for trading and mostly noise
+
   const trackSide = (s, side, leg) => {
     const isCall = side === 'CE';
     const key = `${targetExpiry}|${s.strike}|${side}`;
@@ -441,14 +450,15 @@ async function processOptionChainData(raw, allExpiries, targetExpiry) {
     if (isNewSnapshot) {
       const prev = flowState.prev[key];
       let anomaly = { isAnomaly: false, zScore: 0 };
-      if (prev) {
-        const oiInc = chg - prev.chg;
-        const volInc = Math.max(0, vol - prev.vol);
-        anomaly = updateWelfordZScore(key, oiInc, isCall);
-        const flow = updateAndDetectUnusualFlow(s.strike, volInc, oiInc, isCall, key);
-        if (flow) flowState.recent[key] = { flow, ts: now };
+      const gapMin = prev ? (snapMs - prev.ts) / 60000 : null;
+      if (prev && gapMin >= MIN_GAP_MIN && gapMin <= MAX_GAP_MIN) {
+        const oiRate = (chg - prev.chg) / gapMin;
+        const volRate = Math.max(0, vol - prev.vol) / gapMin;
+        anomaly = updateWelfordZScore(key, oiRate, isCall);
+        const flow = updateAndDetectUnusualFlow(s.strike, volRate, oiRate, isCall, key);
+        if (flow && Math.abs(s.strike - spot) / spot <= FLOW_MAX_DIST) flowState.recent[key] = { flow, ts: now };
       }
-      flowState.prev[key] = { chg, vol };
+      flowState.prev[key] = { chg, vol, ts: snapMs };
       flowState.results[key] = anomaly;
     }
 
