@@ -159,12 +159,33 @@ export function renderProbabilityChart(canvasId, pdfData, spotPrice) {
 
 let timelineChart = null;
 
+// Vertical cursor showing which stored snapshot the replay slider is on.
+const timelineCursorPlugin = {
+  id: 'timelineCursor',
+  afterDatasetsDraw(chart) {
+    const idx = chart.$cursorIndex;
+    if (idx === null || idx === undefined || !chart.data.labels[idx]) return;
+    const x = chart.scales.x.getPixelForValue(idx);
+    const { ctx, chartArea } = chart;
+    ctx.save();
+    ctx.strokeStyle = cssVar('--text') || '#e8eaf0';
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, chartArea.top);
+    ctx.lineTo(x, chartArea.bottom);
+    ctx.stroke();
+    ctx.restore();
+  }
+};
+
 const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 const istHm = t => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
 
 /** Spot on the left axis, one selectable metric on the right. Updates in place to avoid flicker. */
-export function renderTimelineChart(canvasId, points, metricKey, metricLabel) {
+export function renderTimelineChart(canvasId, points, metricKey, metricLabel, cursorIndex = null) {
   if (!window.Chart) return;
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
@@ -181,6 +202,7 @@ export function renderTimelineChart(canvasId, points, metricKey, metricLabel) {
     timelineChart = new window.Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { labels, datasets: [] },
+      plugins: [timelineCursorPlugin],
       options: {
         animation: false,
         responsive: true,
@@ -194,6 +216,7 @@ export function renderTimelineChart(canvasId, points, metricKey, metricLabel) {
   }
 
   const chart = timelineChart;
+  chart.$cursorIndex = cursorIndex;
   chart.data.labels = labels;
   chart.data.datasets = [
     { label: 'Spot', data: spot, borderColor: accent, yAxisID: 'y' },
@@ -280,6 +303,14 @@ export function renderOiChart(canvasId, series, markers = []) {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
+        onClick(evt, elements, chart) {
+          if (!elements.length) return;
+          const strike = Number(chart.data.labels[elements[0].index]);
+          if (strike) window.dispatchEvent(new CustomEvent('strike-click', { detail: strike }));
+        },
+        onHover(evt, elements) {
+          evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+        },
         plugins: {
           legend: { labels: { color: muted, boxWidth: 10, font: { size: 11 } } },
           tooltip: {

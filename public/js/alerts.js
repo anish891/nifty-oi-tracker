@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, mergeSettings, createAlertEngine } from './alert-rules.js';
+import { attachDrawerSwipe, announcePanelOpen, onOtherPanelOpen } from './ui-utils.js';
 
 // Alerts UI. The rule engine decides *what* happened and what deserves to interrupt (alert-rules.js);
 // this file only delivers it: log, toast, optional sound / desktop notification, plus snooze.
@@ -459,6 +460,7 @@ export function toggleAlertsDrawer(force) {
   drawer.setAttribute('aria-hidden', String(!open));
   document.getElementById('alertsBackdrop')?.classList.toggle('open', open);
   if (open) {
+    announcePanelOpen('alerts');
     unread = 0;
     hiddenCount = 0;
     dismissAllToasts();
@@ -467,38 +469,6 @@ export function toggleAlertsDrawer(force) {
     renderSettings();
     renderSnooze();
   }
-}
-
-/** Drag the open drawer to the right to close it. */
-function attachDrawerSwipe(drawer) {
-  let startX = null;
-  let startY = null;
-  let dx = 0;
-  drawer.addEventListener('pointerdown', e => {
-    if (e.target.closest('input, select, textarea, button, label')) return;
-    startX = e.clientX;
-    startY = e.clientY;
-    dx = 0;
-  });
-  drawer.addEventListener('pointermove', e => {
-    if (startX === null) return;
-    dx = e.clientX - startX;
-    if (Math.abs(e.clientY - startY) > Math.abs(dx)) return; // vertical scroll, not a swipe
-    if (dx > 0) {
-      drawer.classList.add('dragging');
-      drawer.style.transform = `translateX(${dx}px)`;
-    }
-  });
-  const end = () => {
-    if (startX === null) return;
-    const shouldClose = dx > 90;
-    startX = null;
-    drawer.classList.remove('dragging');
-    drawer.style.transform = '';
-    if (shouldClose) toggleAlertsDrawer(false);
-  };
-  drawer.addEventListener('pointerup', end);
-  drawer.addEventListener('pointercancel', end);
 }
 
 export function initAlerts() {
@@ -542,7 +512,8 @@ export function initAlerts() {
   drawer.querySelector('.ad-close').addEventListener('click', () => toggleAlertsDrawer(false));
   drawer.querySelectorAll('.ad-tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
   drawer.querySelector('#alertClear').addEventListener('click', () => { log = []; saveLog(); renderLog(); });
-  attachDrawerSwipe(drawer);
+  attachDrawerSwipe(drawer, () => toggleAlertsDrawer(false));
+  onOtherPanelOpen('alerts', () => toggleAlertsDrawer(false));
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { toggleAlertsDrawer(false); dismissAllToasts(); } });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {

@@ -17,8 +17,8 @@ router.get('/option-chain', async (req, res) => {
     const data = await processOptionChainData(raw, allExpiries, targetExpiry);
     res.json({ ok: true, data });
   } catch (err) {
-    console.error('Error fetching option chain:', err.message);
-    res.status(502).json({ ok: false, error: err.message });
+    if (err.code !== 'BAD_EXPIRY') console.error('Error fetching option chain:', err.message);
+    res.status(err.code === 'BAD_EXPIRY' ? 400 : 502).json({ ok: false, error: err.message });
   }
 });
 
@@ -33,6 +33,45 @@ router.get('/intraday', async (req, res) => {
     res.json({ ok: true, backend: history.backend, persistent: history.configured, ...data });
   } catch (err) {
     console.error('Error reading intraday history:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+const EXPIRY_RE = /^\d{2}-[A-Za-z]{3}-\d{4}$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Per-strike table for one stored snapshot (immutable once written → safe to cache hard)
+router.get('/snapshot', async (req, res) => {
+  const { expiry } = req.query;
+  const t = Number(req.query.t);
+  if (!EXPIRY_RE.test(expiry || '') || !Number.isInteger(t) || t <= 0) {
+    return res.status(400).json({ ok: false, error: 'expiry (DD-Mon-YYYY) and integer t are required' });
+  }
+  try {
+    const strikes = await history.getSnapshotStrikes(expiry, t);
+    if (!strikes) return res.status(404).json({ ok: false, error: 'snapshot not found (expired or never recorded)' });
+    res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400, immutable');
+    res.json({ ok: true, expiry, t, strikes });
+  } catch (err) {
+    console.error('Error reading snapshot:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// One strike across the day (sampled)
+router.get('/strike-history', async (req, res) => {
+  const { expiry, date } = req.query;
+  const strike = Number(req.query.strike);
+  if (!EXPIRY_RE.test(expiry || '') || !Number.isInteger(strike) || strike <= 0) {
+    return res.status(400).json({ ok: false, error: 'expiry (DD-Mon-YYYY) and integer strike are required' });
+  }
+  if (date && !DATE_RE.test(date)) return res.status(400).json({ ok: false, error: 'date must be YYYY-MM-DD' });
+  try {
+    const data = await history.getStrikeHistory(expiry, strike, date || null);
+    res.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    res.json({ ok: true, ...data });
+  } catch (err) {
+    console.error('Error reading strike history:', err.message);
     res.status(500).json({ ok: false, error: err.message });
   }
 });

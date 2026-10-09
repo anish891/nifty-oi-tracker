@@ -125,7 +125,8 @@ async function getIntraday(expiry, date = null) {
   if (!day) return { date: null, expiry, points: [], baselines: {} };
 
   const rows = await store.lrange(`oi:s:${day}:${expiry}`, 0, -1);
-  const points = rows.map(safeParse).filter(Boolean);
+  // Insertion order is arrival order; two instances racing can append slightly out of order, so sort by time.
+  const points = rows.map(safeParse).filter(Boolean).sort((a, b) => a.t - b.t);
   if (points.length === 0) return { date: day, expiry, points: [], baselines: {} };
 
   const latest = points[points.length - 1];
@@ -156,11 +157,49 @@ async function getIntraday(expiry, date = null) {
   return { date: day, expiry, points, baselines };
 }
 
+const COLS = ['strike', 'ceOI', 'peOI', 'ceChg', 'peChg', 'ceLtp', 'peLtp', 'ceIv', 'peIv'];
+const rowToObject = r => Object.fromEntries(COLS.map((c, i) => [c, r[i]]));
+
+/** Per-strike table stored for one snapshot (null if that snapshot has expired / never existed). */
+async function getSnapshotStrikes(expiry, t) {
+  const raw = await store.get(`oi:k:${expiry}:${t}`);
+  const rows = raw ? safeParse(raw) : null;
+  return rows ? rows.map(rowToObject) : null;
+}
+
+/**
+ * One strike's OI / price / IV across the day, sampled to at most `maxSamples` snapshots
+ * (always including the first and last) so a drill-down costs ~60 reads, not ~400.
+ */
+async function getStrikeHistory(expiry, strike, date = null, maxSamples = 60) {
+  const day = date || await store.get(`oi:latest:${expiry}`);
+  if (!day) return { date: null, expiry, strike, samples: [] };
+
+  const rows = await store.lrange(`oi:s:${day}:${expiry}`, 0, -1);
+  const points = rows.map(safeParse).filter(Boolean).sort((a, b) => a.t - b.t);
+  if (points.length === 0) return { date: day, expiry, strike, samples: [] };
+
+  const stride = Math.max(1, Math.ceil(points.length / maxSamples));
+  const picked = points.filter((_, i) => i % stride === 0);
+  if (picked[picked.length - 1] !== points[points.length - 1]) picked.push(points[points.length - 1]);
+
+  const blobs = await store.pipeline(picked.map(p => ['GET', `oi:k:${expiry}:${p.t}`]));
+  const samples = [];
+  picked.forEach((p, i) => {
+    const table = blobs[i] ? safeParse(blobs[i]) : null;
+    const row = table && table.find(r => r[0] === strike);
+    if (row) samples.push({ t: p.t, spot: p.spot, ...rowToObject(row) });
+  });
+  return { date: day, expiry, strike, samples };
+}
+
 module.exports = {
   backend: store.backend,
   configured: store.configured,
   recordSnapshot,
   getIntraday,
+  getSnapshotStrikes,
+  getStrikeHistory,
   getSessions,
   saveSession,
   buildSessionRecord

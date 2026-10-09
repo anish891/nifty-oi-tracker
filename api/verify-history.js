@@ -45,5 +45,27 @@ const mk = (minOffset, callOI) => {
   const sessions = await history.getSessions(10);
   assert.strictEqual(sessions.length, 1);
   assert.strictEqual(sessions[0].date, '2026-10-08');
+  // out-of-order arrival (two instances racing) must not scramble the series or the baselines
+  {
+    const ex = '24-Nov-2026';
+    for (const m of [5, 0, 3, 1, 4, 2, 6]) await history.recordSnapshot({ ...mk(m, 3e6 + m * 1e4), expiry: ex }, null);
+    const o = await history.getIntraday(ex);
+    assert.deepStrictEqual(o.points.map(p => p.t), [...o.points.map(p => p.t)].sort((a, b) => a - b), 'points are returned in time order');
+    assert.strictEqual(o.baselines.open.t, o.points[0].t, 'open baseline is the earliest snapshot, not the first inserted');
+  }
+
+  // snapshot + strike-history reads
+  const lastPoint = out.points.at(-1);
+  const snap = await history.getSnapshotStrikes('13-Oct-2026', lastPoint.t);
+  assert(Array.isArray(snap) && snap[0].strike === 22250 && snap[0].ceOI === (3e6 + 40 * 1e4) / 100, 'snapshot rows are decoded into named fields');
+  assert.strictEqual(await history.getSnapshotStrikes('13-Oct-2026', 12345), null, 'unknown snapshot → null');
+  const sh = await history.getStrikeHistory('13-Oct-2026', 22250, null, 10);
+  assert(sh.samples.length <= 11 && sh.samples.length >= 8, `sampled to ~10, got ${sh.samples.length}`);
+  assert.strictEqual(sh.samples[0].t, out.points[0].t, 'includes the first snapshot');
+  assert.strictEqual(sh.samples.at(-1).t, lastPoint.t, 'includes the latest snapshot');
+  assert(sh.samples.every(x => x.strike === 22250 && typeof x.ceOI === 'number' && typeof x.spot === 'number'));
+  assert.deepStrictEqual((await history.getStrikeHistory('13-Oct-2026', 99999, null, 10)).samples, [], 'strike never stored → no samples');
+  assert.deepStrictEqual((await history.getStrikeHistory('01-Jan-2030', 22250)).samples, [], 'unknown expiry → empty');
+
   console.log('✓ history OK:', out.points.length, 'points; baselines', Object.keys(out.baselines).join(','), '; sessions', sessions.length);
 })().catch(e => { console.error('FAIL', e); process.exit(1); });

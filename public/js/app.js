@@ -1,5 +1,7 @@
 import { initAlerts, processAlerts, toggleAlertsDrawer, alertsEnabled } from './alerts.js';
-import { fetchOptionChainData, fetchSimilarSessionsData, fetchIntradayData } from './api-client.js';
+import { fetchOptionChainData, fetchSimilarSessionsData, fetchIntradayData, fetchSnapshot } from './api-client.js';
+import { openStrikePanel, initStrikePanel } from './strike-panel.js';
+import { readUrlState, writeUrlState } from './url-state.js';
 import { fmt, fmtK, fmtChg, pct, timeStr, getSmoothedBuildup, renderProbabilityChart, renderTimelineChart, renderOiChart } from './charts.js';
 
 let currentData = null;
@@ -26,6 +28,21 @@ const METRIC_LABELS = {
   vix: 'India VIX', gexCr: 'Net GEX (Cr)', callOI: 'Total Call OI', putOI: 'Total Put OI'
 };
 
+// A shared link (?expiry=…&view=…&overlay=…) wins over what this browser last used.
+const URL_STATE = readUrlState({ views: ['oi', 'chg', 'm5', 'm15', 'm30', 'open'], overlays: Object.keys(METRIC_LABELS) });
+let urlExpiryPending = false;
+if (URL_STATE.expiry) { selectedExpiry = URL_STATE.expiry; urlExpiryPending = true; }
+if (URL_STATE.view) oiChartMode = URL_STATE.view;
+if (URL_STATE.overlay) timelineMetric = URL_STATE.overlay;
+
+let lastFetchOk = true;
+
+// Replay: scrub through the stored day. replayT = ms timestamp of the chosen snapshot (null = live).
+let replayT = null;
+let replayRows = null;
+let replayDebounce = null;
+const replayablePoints = () => (intraday && currentData && intraday.expiry === currentData.expiry ? intraday.points || [] : []);
+
 async function refreshIntraday(force = false) {
   const expiry = currentData && currentData.expiry;
   if (!expiry) return;
@@ -39,6 +56,7 @@ async function refreshIntraday(force = false) {
     console.error('Intraday history fetch failed:', e);
     intraday = null;
   }
+  renderHealth();
   if (currentData) {
     renderTimeline();
     renderOiChart_();
@@ -49,6 +67,7 @@ async function refreshIntraday(force = false) {
 export function onTimelineMetricChange() {
   const sel = document.getElementById('timelineMetric');
   timelineMetric = sel ? sel.value : 'pcr';
+  writeUrlState({ overlay: timelineMetric === 'pcr' ? null : timelineMetric });
   renderTimeline();
 }
 
@@ -56,6 +75,7 @@ export function onOiChartModeChange() {
   const sel = document.getElementById('oiChartMode');
   oiChartMode = sel ? sel.value : 'oi';
   try { localStorage.setItem('oiChartMode', oiChartMode); } catch (e) { /* ignore */ }
+  writeUrlState({ view: oiChartMode === 'oi' ? null : oiChartMode });
   renderOiChart_();
 }
 
@@ -124,9 +144,53 @@ function summarizeOi(d, series, mode) {
   el.innerHTML = parts.map(x => `<span>${x}</span>`).join('');
 }
 
+function renderReplayChart() {
+  const d = currentData;
+  const pt = replayablePoints().find(p => p.t === replayT);
+  const empty = document.getElementById('oiChartEmpty');
+  const sel = document.getElementById('oiChartMode');
+  if (sel) {
+    [...sel.options].forEach(o => { o.disabled = ['m5', 'm15', 'm30'].includes(o.value); });
+  }
+  if (!pt || !replayRows) {
+    if (empty) empty.textContent = 'Loading snapshot…';
+    return; // keep the previous chart on screen meanwhile
+  }
+  if (empty) empty.textContent = '';
+
+  const strikes = replayRows.map(r => r.strike);
+  const open = intraday && intraday.baselines && intraday.baselines.open;
+  let mode = ['oi', 'chg', 'open'].includes(oiChartMode) ? oiChartMode : 'oi';
+  if (mode === 'open' && !(open && open.strikes)) mode = 'oi';
+  if (sel) sel.value = mode;
+
+  let series;
+  if (mode === 'chg') {
+    series = { strikes, calls: replayRows.map(r => r.ceChg), puts: replayRows.map(r => r.peChg), diverging: true };
+  } else if (mode === 'open') {
+    const delta = (now, base) => (base === undefined ? null : now - base);
+    series = {
+      strikes,
+      calls: replayRows.map(r => delta(r.ceOI, open.strikes[r.strike]?.[0])),
+      puts: replayRows.map(r => delta(r.peOI, open.strikes[r.strike]?.[1])),
+      diverging: true
+    };
+  } else {
+    series = { strikes, calls: replayRows.map(r => r.ceOI), puts: replayRows.map(r => r.peOI), diverging: false };
+  }
+
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const markers = [{ value: pt.spot, label: 'Spot', color: css('--accent') || '#3b82f6' }];
+  if (pt.maxPain) markers.push({ value: pt.maxPain, label: 'Max Pain', color: css('--warn') || '#f59e0b', dash: [5, 4] });
+  renderOiChart('oiChart', series, markers);
+  summarizeOi(d, series, mode);
+}
+
 function renderOiChart_() {
   const d = currentData;
   if (!d || !d.strikes || !d.strikes.length) return;
+  syncReplayBadge();
+  if (replayT !== null) { renderReplayChart(); return; }
 
   // Label window options with the baseline they would compare against; disable the ones without history.
   const sel = document.getElementById('oiChartMode');
@@ -166,10 +230,76 @@ function renderOiChart_() {
   summarizeOi(d, series, mode);
 }
 
+function syncReplayBadge() {
+  const badge = document.getElementById('oiReplayBadge');
+  if (!badge) return;
+  badge.hidden = replayT === null;
+  if (replayT !== null) badge.textContent = `Replay · ${hmIst(replayT)} IST`;
+}
+
+/** Keep the slider, label and Live button in step with the stored series and the chosen snapshot. */
+function syncReplayUi(points) {
+  const slider = document.getElementById('replaySlider');
+  const label = document.getElementById('replayLabel');
+  const live = document.getElementById('replayLive');
+  if (!slider || !label) return;
+
+  // The chosen snapshot can age out of the series (new day / expiry): fall back to live
+  if (replayT !== null && !points.some(p => p.t === replayT)) { replayT = null; replayRows = null; }
+
+  slider.disabled = points.length < 2;
+  slider.max = String(Math.max(0, points.length - 1));
+  slider.value = String(replayT === null ? Math.max(0, points.length - 1) : points.findIndex(p => p.t === replayT));
+  label.classList.toggle('active', replayT !== null);
+  label.textContent = replayT !== null
+    ? `Replay ${hmIst(replayT)} IST`
+    : points.length ? `Live · ${points.length} snapshots` : 'No history yet';
+  if (live) live.hidden = replayT === null;
+  syncReplayBadge();
+}
+
+export function replayGoLive() {
+  clearTimeout(replayDebounce);
+  replayT = null;
+  replayRows = null;
+  renderTimeline();
+  renderOiChart_();
+}
+
+function onReplaySlide() {
+  const points = replayablePoints();
+  const idx = Number(document.getElementById('replaySlider').value);
+  if (!points.length) return;
+  if (idx >= points.length - 1) { replayGoLive(); return; }
+  replayT = points[idx].t;
+  replayRows = null;
+  renderTimeline(); // cursor + label move immediately, the OI chart follows once the snapshot arrives
+  syncReplayBadge();
+  clearTimeout(replayDebounce);
+  replayDebounce = setTimeout(async () => {
+    const t = replayT;
+    if (t === null || !currentData) return;
+    try {
+      const rows = await fetchSnapshot(currentData.expiry, t);
+      if (t !== replayT) return; // user moved on
+      replayRows = rows;
+    } catch (e) {
+      if (t !== replayT) return;
+      console.error('Replay snapshot failed:', e);
+      replayRows = null;
+      const empty = document.getElementById('oiChartEmpty');
+      if (empty) empty.textContent = 'That snapshot is no longer stored.';
+      return;
+    }
+    renderOiChart_();
+  }, 120);
+}
+
 function renderTimeline() {
   const chip = document.getElementById('historyChip');
   const empty = document.getElementById('timelineEmpty');
-  const points = intraday && intraday.expiry === (currentData && currentData.expiry) ? intraday.points || [] : [];
+  const points = replayablePoints();
+  syncReplayUi(points);
 
   if (chip) {
     if (!intraday) {
@@ -193,7 +323,8 @@ function renderTimeline() {
   } else if (empty) {
     empty.textContent = '';
   }
-  renderTimelineChart('timelineChart', points, timelineMetric, METRIC_LABELS[timelineMetric] || timelineMetric);
+  const cursor = replayT === null ? null : points.findIndex(p => p.t === replayT);
+  renderTimelineChart('timelineChart', points, timelineMetric, METRIC_LABELS[timelineMetric] || timelineMetric, cursor < 0 ? null : cursor);
 }
 
 // Baseline snapshot (5m / 15m earlier) from server history, shaped like a local snapshot.
@@ -206,6 +337,46 @@ function serverSnapshot(name) {
   Object.entries(b.strikes || {}).forEach(([k, [ce, pe]]) => { strikes[k] = { ceOI: ce, peOI: pe }; });
   return { pcr: b.pcr, spot: b.spot, totalCallOI: b.callOI, totalPutOI: b.putOI, strikes, timestamp: b.t };
 }
+
+/** Small status chips so a silent fallback (no VIX, estimated pivots, in-memory history…) is never invisible. */
+function renderHealth() {
+  const host = document.getElementById('healthChips');
+  if (!host) return;
+  const d = currentData;
+  const chips = [];
+  const add = (label, level, tip) => chips.push({ label, level, tip });
+
+  if (!lastFetchOk) add('NSE', 'bad', 'The last request to the server failed. Retrying automatically.');
+  else if (!d) add('NSE', '', 'Waiting for the first snapshot.');
+  else if (!isMarketOpen()) add('NSE · closed', '', 'Market closed — showing the last snapshot.');
+  else {
+    const age = (Date.now() - new Date(d.dataAsOf || d.fetchedAt).getTime()) / 1000;
+    if (age < 150) add('NSE', 'ok', `Fresh: snapshot is ${Math.round(age)}s old.`);
+    else if (age < 600) add('NSE', 'warn', `Snapshot is ${Math.round(age / 60)} min old — NSE may be slow or throttling.`);
+    else add('NSE', 'bad', `Snapshot is ${Math.round(age / 60)} min old — NSE data is stale.`);
+  }
+
+  if (d) {
+    add('VIX', d.vix ? 'ok' : 'warn', d.vix ? `India VIX ${d.vix.last}` : 'India VIX unavailable — the volatility badge has no reference and VIX alerts are off.');
+    const real = d.cpr && d.cpr.source === 'PREV_SESSION';
+    add('Pivots', real ? 'ok' : 'warn', real ? `CPR built from ${d.cpr.basisDate} H/L/C.` : 'Previous-session data unavailable: pivots are OI-estimated and CPR alerts are off.');
+  }
+
+  if (intradayFetchedAt === 0) add('History', '', 'Not loaded yet.');
+  else if (!intraday) add('History', 'bad', 'Intraday history could not be loaded.');
+  else if (intraday.persistent) add('History', 'ok', `Saved to Upstash · ${(intraday.points || []).length} snapshots today.`);
+  else add('History', 'warn', 'In-memory only — lost on restart / cold start. Configure Upstash for persistence.');
+
+  host.textContent = '';
+  chips.forEach(c => {
+    const chip = document.createElement('span');
+    chip.className = `hchip ${c.level}`;
+    chip.title = c.tip;
+    chip.append(document.createElement('i'), document.createTextNode(c.label));
+    host.append(chip);
+  });
+}
+setInterval(renderHealth, 15000);
 
 export async function fetchNow() {
   if (fetchInProgress) return;
@@ -221,10 +392,22 @@ export async function fetchNow() {
     }
     hideOverlay();
     setLive(true);
+    lastFetchOk = true;
+    urlExpiryPending = false;
+    renderHealth();
     refreshIntraday();
   } catch (e) {
+    lastFetchOk = false;
     setLive(false);
+    renderHealth();
     console.error('Fetch failed:', e);
+    if (urlExpiryPending) {
+      // The expiry from a shared/old link may no longer exist: drop it and fall back to the nearest one.
+      urlExpiryPending = false;
+      selectedExpiry = null;
+      writeUrlState({ expiry: null });
+      setTimeout(fetchNow, 0);
+    }
   } finally {
     fetchInProgress = false;
   }
@@ -581,6 +764,7 @@ export function renderAll() {
   processAlerts(d, { spikeAlerts: lastSpikeAlerts, spot5m: serverSnapshot('m5')?.spot });
   fetchSimilarSessions();
   renderTable();
+  renderHealth();
 }
 
 // --- Rate of Change (RoC) & Institutional Velocity Engine ---
@@ -895,7 +1079,7 @@ export function renderTable() {
   <td class="right" title="${cGreeksTitle}">${cLTP ? cLTP.toFixed(2) : '—'}</td>
   <td class="right muted" style="font-size:11px;">${cBid ? cBid.toFixed(1) + ' / ' + cAsk.toFixed(1) : '—'}</td>
 
-  <td class="strike-cell ${isATM ? 'atm-row' : ''}">
+  <td class="strike-cell ${isATM ? 'atm-row' : ''}" title="Click for this strike's history">
     ${fmt(r.strike)}${isATM ? '<span class="atm-tag">ATM</span>' : ''}
   </td>
 
@@ -1058,6 +1242,9 @@ export function onExpiryChange() {
   const sel = document.getElementById('expirySelect');
   selectedExpiry = sel ? sel.value : null;
   intraday = null;
+  replayT = null;
+  replayRows = null;
+  writeUrlState({ expiry: selectedExpiry });
   fetchNow();
 }
 
@@ -1530,6 +1717,43 @@ export function renderTradeSetup(d) {
   }
 }
 
+function openStrike(strike) {
+  const d = currentData;
+  if (!d || !strike) return;
+  const live = replayT === null ? d.strikes.find(s => s.strike === strike) : undefined;
+  openStrikePanel({ expiry: d.expiry, strike, live, spot: replayT === null ? d.spot : undefined });
+}
+
+export function toggleShortcuts(force) {
+  const el = document.getElementById('shortcutsHelp');
+  if (el) el.hidden = typeof force === 'boolean' ? !force : !el.hidden;
+}
+
+function cycleTheme() {
+  const order = ['system', 'dark', 'light'];
+  const current = localStorage.getItem('oi_tracker_theme') || 'system';
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  localStorage.setItem('oi_tracker_theme', next);
+  applyTheme(next);
+  const sel = document.getElementById('themeSelect');
+  if (sel) sel.value = next;
+}
+
+function onKeydown(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target && e.target.closest && e.target.closest('input, select, textarea, [contenteditable]')) return;
+  switch (e.key) {
+    case 'r': case 'R': fetchNow(); break;
+    case 'a': case 'A': toggleAlertsDrawer(); break;
+    case 'g': case 'G': document.getElementById('toggleGreeksBtn')?.click(); break;
+    case 't': case 'T': cycleTheme(); break;
+    case 'l': case 'L': replayGoLive(); break;
+    case '?': toggleShortcuts(); break;
+    case 'Escape': toggleShortcuts(false); break;
+    default: break;
+  }
+}
+
 // Global window exposure for inline event handlers
 window.fetchNow = fetchNow;
 window.onIntervalChange = onIntervalChange;
@@ -1537,6 +1761,8 @@ window.onExpiryChange = onExpiryChange;
 window.onTimelineMetricChange = onTimelineMetricChange;
 window.onOiChartModeChange = onOiChartModeChange;
 window.toggleAlertsDrawer = toggleAlertsDrawer;
+window.replayGoLive = replayGoLive;
+window.toggleShortcuts = toggleShortcuts;
 window.onThemeSelectChange = onThemeSelectChange;
 window.sortTable = sortTable;
 window.toggleGreeksView = toggleGreeksView;
@@ -1550,6 +1776,18 @@ window.closeExportMenu = closeExportMenu;
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initAlerts();
+  initStrikePanel();
+  const metricSel = document.getElementById('timelineMetric');
+  if (metricSel) metricSel.value = timelineMetric;
+  document.getElementById('replaySlider')?.addEventListener('input', onReplaySlide);
+  document.addEventListener('keydown', onKeydown);
+  window.addEventListener('strike-click', e => openStrike(e.detail));
+  document.getElementById('chainBody')?.addEventListener('click', e => {
+    const cell = e.target.closest('.strike-cell');
+    const row = cell && cell.closest('tr');
+    if (row) openStrike(Number(row.dataset.strike));
+  });
+  renderHealth();
   document.body.classList.add('is-loading');
   const tb = document.querySelector('.topbar');
   const syncTopbar = () => tb && document.documentElement.style.setProperty('--topbar-h', tb.offsetHeight + 'px');

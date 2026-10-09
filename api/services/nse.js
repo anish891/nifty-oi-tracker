@@ -133,6 +133,12 @@ async function loadFromNSE(symbol, expiryDate) {
 
 async function fetchRawNSEOptionChain(symbol = 'NIFTY', expiryDate = null) {
   const known = getCachedExpiries();
+  if (expiryDate && known && !known.includes(expiryDate)) {
+    // Stale / mistyped expiry (e.g. from an old shared link): fail fast instead of burning NSE timeouts.
+    const err = new Error(`Unknown expiry ${expiryDate}`);
+    err.code = 'BAD_EXPIRY';
+    throw err;
+  }
   const resolved = expiryDate || (known && known[0]) || null;
   const key = `${symbol}|${resolved || 'nearest'}`;
 
