@@ -872,10 +872,10 @@ export function renderTable() {
       : '';
 
     const cGreeksClass = window.showGreeks ? '' : 'hidden-greeks';
-    const cDeltaVal = cGreeks.delta !== undefined ? cGreeks.delta : 'n/a';
-    const cThetaVal = cGreeks.theta !== undefined ? `₹${cGreeks.theta}` : 'n/a';
-    const pDeltaVal = pGreeks.delta !== undefined ? pGreeks.delta : 'n/a';
-    const pThetaVal = pGreeks.theta !== undefined ? `₹${pGreeks.theta}` : 'n/a';
+    const cDeltaVal = cGreeks.delta !== undefined ? cGreeks.delta : '—';
+    const cThetaVal = cGreeks.theta !== undefined ? `₹${cGreeks.theta}` : '—';
+    const pDeltaVal = pGreeks.delta !== undefined ? pGreeks.delta : '—';
+    const pThetaVal = pGreeks.theta !== undefined ? `₹${pGreeks.theta}` : '—';
 
     return `
 <tr class="${isATM ? 'atm-row' : ''} ${flashCls}" data-strike="${r.strike}">
@@ -896,17 +896,17 @@ export function renderTable() {
       <div class="bar-track"><div class="bar-fill call-fill" style="width:${cBarW}%"></div></div>
     </div>
   </td>
-  <td class="right muted" title="${cGreeksTitle}">${cIV ? cIV.toFixed(1) + '%' : 'n/a'}</td>
-  <td class="right" title="${cGreeksTitle}">${cLTP ? cLTP.toFixed(2) : 'n/a'}</td>
-  <td class="right muted" style="font-size:11px;">${cBid ? cBid.toFixed(1) + ' / ' + cAsk.toFixed(1) : 'n/a'}</td>
+  <td class="right muted" title="${cGreeksTitle}">${cIV ? cIV.toFixed(1) + '%' : '—'}</td>
+  <td class="right" title="${cGreeksTitle}">${cLTP ? cLTP.toFixed(2) : '—'}</td>
+  <td class="right muted" style="font-size:11px;">${cBid ? cBid.toFixed(1) + ' / ' + cAsk.toFixed(1) : '—'}</td>
 
   <td class="strike-cell ${isATM ? 'atm-row' : ''}" title="Click for this strike's history">
     ${fmt(r.strike)}${isATM ? '<span class="atm-tag">ATM</span>' : ''}
   </td>
 
-  <td class="right muted" style="font-size:11px;">${pBid ? pBid.toFixed(1) + ' / ' + pAsk.toFixed(1) : 'n/a'}</td>
-  <td class="right" title="${pGreeksTitle}">${pLTP ? pLTP.toFixed(2) : 'n/a'}</td>
-  <td class="right muted" title="${pGreeksTitle}">${pIV ? pIV.toFixed(1) + '%' : 'n/a'}</td>
+  <td class="right muted" style="font-size:11px;">${pBid ? pBid.toFixed(1) + ' / ' + pAsk.toFixed(1) : '—'}</td>
+  <td class="right" title="${pGreeksTitle}">${pLTP ? pLTP.toFixed(2) : '—'}</td>
+  <td class="right muted" title="${pGreeksTitle}">${pIV ? pIV.toFixed(1) + '%' : '—'}</td>
   <td class="right">
     <div class="oi-bar-row left">
       <div class="bar-track"><div class="bar-fill put-fill" style="width:${pBarW}%"></div></div>
