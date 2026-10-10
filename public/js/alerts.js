@@ -247,7 +247,7 @@ const RULE_META = [
   { id: 'pcr', label: 'PCR changes zone', fields: [['hi', 'Bullish above', 0.05], ['lo', 'Bearish below', 0.05]] },
   { id: 'levels', label: 'Spot crosses CPR top/bottom or zero-gamma', fields: [] },
   { id: 'walls', label: 'Spot breaks / OI wall shifts (max call / put)', fields: [] },
-  { id: 'gex', label: 'Gamma regime flips (positive ↔ negative)', fields: [] },
+  { id: 'gex', label: 'Gamma regime flips (positive / negative)', fields: [] },
   { id: 'flow', label: 'Smart-money flow & fast OI builds', fields: [] },
   { id: 'momentum', label: 'Fast spot move in 5 min', fields: [['pct', 'Move ≥ (%)', 0.05]] },
   { id: 'vix', label: 'India VIX spike', fields: [['pct', 'Day change ≥ (%)', 0.5]] },
@@ -314,7 +314,7 @@ function renderSnooze() {
 
 function permissionText() {
   if (typeof Notification === 'undefined') return 'Not supported in this browser';
-  return { granted: 'Allowed', denied: 'Blocked — change it in your browser site settings', default: 'Not asked yet' }[Notification.permission];
+  return { granted: 'Allowed', denied: 'Blocked. Change it in your browser site settings', default: 'Not asked yet' }[Notification.permission];
 }
 
 function renderSettings() {

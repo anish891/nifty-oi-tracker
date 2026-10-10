@@ -1,17 +1,17 @@
 export function fmt(n) {
-  if (n === undefined || n === null || isNaN(n)) return '—';
+  if (n === undefined || n === null || isNaN(n)) return 'n/a';
   return n.toLocaleString('en-IN');
 }
 
 export function fmtK(n) {
-  if (!n && n !== 0) return '—';
+  if (!n && n !== 0) return 'n/a';
   if (Math.abs(n) >= 100000) return (n / 100000).toFixed(2) + 'L';
   if (Math.abs(n) >= 1000) return (n / 1000).toFixed(1) + 'K';
   return n.toLocaleString('en-IN');
 }
 
 export function fmtChg(v) {
-  if (v === undefined || v === null || isNaN(v)) return '—';
+  if (v === undefined || v === null || isNaN(v)) return 'n/a';
   return (v > 0 ? '+' : '') + fmtK(v);
 }
 
@@ -20,7 +20,7 @@ export function pct(v, max) {
 }
 
 export function timeStr(iso) {
-  if (!iso) return '—';
+  if (!iso) return 'n/a';
   const d = new Date(iso);
   return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
@@ -63,7 +63,7 @@ export function getSmoothedBuildup(strike, currentOI, currentPrice, isCall, dayO
 
   // Otherwise classify on the day's change (NSE: OI change vs prev close, price change vs prev close).
   // Never default to "LONG BUILD" just because nothing has moved yet.
-  if (dayOiChg === 0 && dayPriceChg === 0) return { label: '—', cls: '' };
+  if (dayOiChg === 0 && dayPriceChg === 0) return { label: 'FLAT', cls: '' };
   return buildupSingle(dayOiChg, dayPriceChg, isCall);
 }
 
@@ -295,7 +295,7 @@ export function renderOiChart(canvasId, series, markers = []) {
               title: items => `Strike ${Number(items[0].label).toLocaleString('en-IN')}`,
               label: item => {
                 const v = item.parsed.y;
-                if (v === null || v === undefined) return `${item.dataset.label}: —`;
+                if (v === null || v === undefined) return `${item.dataset.label}: n/a`;
                 return `${item.dataset.label}: ${v > 0 && item.chart.$diverging ? '+' : ''}${fmtK(v)}`;
               }
             }

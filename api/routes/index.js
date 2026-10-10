@@ -65,7 +65,7 @@ router.get('/storage-status', (req, res) => {
     persistent: history.configured,
     message: history.configured
       ? 'Upstash Redis connected via REST.'
-      : 'No UPSTASH_REDIS_REST_URL / TOKEN set — history is in memory and is lost on restart or cold start.'
+      : 'No UPSTASH_REDIS_REST_URL / TOKEN set. History is in memory and is lost on restart or cold start.'
   });
 });
 
@@ -121,7 +121,7 @@ router.get('/similar-sessions', async (req, res) => {
         currentVector,
         topMatches: [],
         reason: history.configured
-          ? 'No saved sessions yet — one is stored automatically after each close'
+          ? 'No saved sessions yet. One is stored automatically after each close'
           : 'Session history needs storage (set UPSTASH_REDIS_REST_URL / TOKEN)'
       });
     }

@@ -97,35 +97,35 @@ function computeCompositeRegime(gexRegime, pcr, cprType, ivSkew, spot, maxPain) 
   const drivers = [];
 
   if (negGex && narrow) {
-    regimeLabel = '⚡ EXPLOSIVE BREAKOUT SETUP';
+    regimeLabel = 'EXPLOSIVE BREAKOUT SETUP';
     tacticalBias = bullPcr ? 'BULLISH_BREAKOUT' : bearPcr ? 'BEARISH_BREAKOUT' : 'VOLATILE_EXPANSION';
     drivers.push('Negative Market GEX (dealer hedging amplifies moves)', 'Narrow CPR (trend-day setup)');
     if (bullPcr || bearPcr) drivers.push(`PCR ${pcr.toFixed(2)} confirms ${bullPcr ? 'upside' : 'downside'}`);
     actionableStrategy = bullPcr ? 'Long Call Spreads / Breakout Continuation'
       : bearPcr ? 'Long Put Spreads / Momentum Shorts' : 'Long Straddle / Wait for Direction';
   } else if (negGex && bullPcr && spot > maxPain) {
-    regimeLabel = '🚀 SHORT SQUEEZE RISK';
+    regimeLabel = 'SHORT SQUEEZE RISK';
     tacticalBias = 'STRONG_BULLISH';
     drivers.push(`High PCR (${pcr.toFixed(2)})`, 'Negative gamma squeeze potential', 'Spot above Max Pain');
     actionableStrategy = 'Ride Upward Momentum with Trailing Stop Loss';
   } else if (negGex && bearPcr) {
-    regimeLabel = '📉 GAMMA SLIDE / CAPITULATION';
+    regimeLabel = 'GAMMA SLIDE / CAPITULATION';
     tacticalBias = 'STRONG_BEARISH';
     drivers.push(`Low PCR (${pcr.toFixed(2)}, heavy call writing)`, 'Negative gamma cascading liquidation');
     if (spot < maxPain) drivers.push('Spot below Max Pain');
     actionableStrategy = 'Buy Put Spreads / Fade Rallies into Resistance';
   } else if (negGex) {
-    regimeLabel = '🌪️ VOLATILE TWO-WAY MOVES';
+    regimeLabel = 'VOLATILE TWO-WAY MOVES';
     tacticalBias = 'VOLATILE_EXPANSION';
-    drivers.push('Negative Market GEX (moves get amplified)', `PCR ${pcr.toFixed(2)} is neutral — no directional edge`);
+    drivers.push('Negative Market GEX (moves get amplified)', `PCR ${pcr.toFixed(2)} is neutral, so there is no directional edge`);
     actionableStrategy = 'Reduce size / Defined-risk long volatility';
   } else if (narrow) {
-    regimeLabel = '🌀 COILED UNDER POSITIVE GAMMA';
+    regimeLabel = 'COILED UNDER POSITIVE GAMMA';
     tacticalBias = 'NEUTRAL';
     drivers.push('Positive GEX (dealers dampen moves)', 'Narrow CPR (breakout candidate)');
     actionableStrategy = 'Wait for CPR break with volume; avoid naked short premium';
   } else {
-    regimeLabel = '🎯 RANGE-BOUND PINNING';
+    regimeLabel = 'RANGE-BOUND PINNING';
     tacticalBias = bullPcr ? 'MILD_BULLISH' : bearPcr ? 'MILD_BEARISH' : 'RANGE_BOUND';
     drivers.push('Positive Market GEX (dealer mean reversion)', `${cprType} CPR (range day likely)`);
     if (nearPain) drivers.push('Spot pinned near Max Pain');

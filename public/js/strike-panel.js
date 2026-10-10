@@ -56,11 +56,11 @@ function renderHeader(body, strike, live, expiry, spot) {
     grid.append(el('div', 'sp-legend'));
     grid.firstChild.append(el('span', 'bear', 'Call'), el('span', 'bull', 'Put'));
     grid.append(
-      statCell('LTP', ce.lastPrice ? ce.lastPrice.toFixed(2) : '—', pe.lastPrice ? pe.lastPrice.toFixed(2) : '—'),
+      statCell('LTP', ce.lastPrice ? ce.lastPrice.toFixed(2) : 'n/a', pe.lastPrice ? pe.lastPrice.toFixed(2) : 'n/a'),
       statCell('Open interest', fmtK(ce.openInterest || 0), fmtK(pe.openInterest || 0)),
       statCell('Change in OI (day)', fmtChg(ce.changeinOpenInterest || 0), fmtChg(pe.changeinOpenInterest || 0)),
-      statCell('IV', ce.impliedVolatility ? ce.impliedVolatility.toFixed(1) + '%' : '—', pe.impliedVolatility ? pe.impliedVolatility.toFixed(1) + '%' : '—'),
-      statCell('Delta', ce.greeks ? String(ce.greeks.delta) : '—', pe.greeks ? String(pe.greeks.delta) : '—')
+      statCell('IV', ce.impliedVolatility ? ce.impliedVolatility.toFixed(1) + '%' : 'n/a', pe.impliedVolatility ? pe.impliedVolatility.toFixed(1) + '%' : 'n/a'),
+      statCell('Delta', ce.greeks ? String(ce.greeks.delta) : 'n/a', pe.greeks ? String(pe.greeks.delta) : 'n/a')
     );
     body.append(grid);
   }
@@ -94,7 +94,7 @@ function lineChart(host, title, labels, callData, putData, fmtTick) {
       elements: { point: { radius: 0, hoverRadius: 3 }, line: { borderWidth: 2, tension: 0.2 } },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: i => `${i.dataset.label}: ${i.parsed.y === null ? '—' : fmtTick(i.parsed.y)}` } }
+        tooltip: { callbacks: { label: i => `${i.dataset.label}: ${i.parsed.y === null ? 'n/a' : fmtTick(i.parsed.y)}` } }
       },
       scales: {
         x: { ticks: { color: muted, maxTicksLimit: 6, font: { size: 10 } }, grid: { color: grid } },
@@ -138,7 +138,7 @@ export async function openStrikePanel({ expiry, strike, live, spot }) {
   const samples = (data.samples || []).filter(s => s.t);
   if (samples.length < 2) {
     status.textContent = data.date
-      ? 'Not enough stored snapshots for this strike yet — history builds up through the session.'
+      ? 'Not enough stored snapshots for this strike yet. History builds up through the session.'
       : 'No stored history yet. Snapshots are recorded about once a minute while the market is open.';
     return;
   }

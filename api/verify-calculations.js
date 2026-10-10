@@ -256,7 +256,7 @@ console.log('✓ Test 7 Passed: Intraday ML Trend & Breakout Prediction Engine v
 
 // ── TEST 12: regime & ML sanity ──
 {
-  assert.strictEqual(computeCompositeRegime('NEGATIVE_GAMMA', 1.0, 'WIDE', 0, 24000, 24000).regimeLabel, '🌪️ VOLATILE TWO-WAY MOVES', 'neg GEX + neutral PCR must not fall through to a calm label');
+  assert.strictEqual(computeCompositeRegime('NEGATIVE_GAMMA', 1.0, 'WIDE', 0, 24000, 24000).regimeLabel, 'VOLATILE TWO-WAY MOVES', 'neg GEX + neutral PCR must not fall through to a calm label');
   const calm = computeCompositeRegime('POSITIVE_GAMMA', 1.0, 'AVERAGE', 0, 24000, 24000);
   assert(calm.confidenceScore <= 90 && calm.confidenceScore >= 60);
   // spot far ABOVE max pain near expiry should tilt bearish vs the same setup at max pain

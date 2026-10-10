@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nifty OI Tracker — Live Change in OI</title>
+  <title>Nifty OI Tracker: Live Change in OI</title>
   <link rel="stylesheet" href="/css/styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
@@ -49,11 +49,12 @@
           </button>
         </div>
       </div>
-      <label class="interval-label">Theme</label>
+      <label class="interval-label" for="themeSelect">Theme</label>
+      <span class="theme-ico" id="themeIcon" aria-hidden="true"></span>
       <select id="themeSelect" onchange="onThemeSelectChange()" title="Select Theme">
-        <option value="system">💻 System</option>
-        <option value="dark" selected>🌙 Dark</option>
-        <option value="light">☀️ Light</option>
+        <option value="system">System</option>
+        <option value="dark" selected>Dark</option>
+        <option value="light">Light</option>
       </select>
       <label class="interval-label">Expiry</label>
       <select id="expirySelect" onchange="onExpiryChange()">
@@ -74,15 +75,15 @@
 
   <!-- Sticky key-numbers strip -->
   <div class="keystrip" id="keyStrip">
-    <div class="ks-item"><span class="ks-label">Spot</span><span class="ks-val" id="ksSpot">—</span></div>
-    <div class="ks-item"><span class="ks-label">ATM</span><span class="ks-val" id="ksAtm">—</span></div>
-    <div class="ks-item"><span class="ks-label">Day</span><span class="ks-val" id="ksDay">—</span></div>
-    <div class="ks-item"><span class="ks-label">PCR</span><span class="ks-val" id="ksPcr">—</span></div>
-    <div class="ks-item"><span class="ks-label">India VIX</span><span class="ks-val" id="ksVix">—</span></div>
-    <div class="ks-item"><span class="ks-label">Max Pain</span><span class="ks-val" id="ksPain">—</span></div>
-    <div class="ks-item"><span class="ks-label">Implied Fut</span><span class="ks-val" id="ksFut">—</span></div>
-    <div class="ks-item"><span class="ks-label">Regime</span><span class="ks-val" id="ksRegime">—</span></div>
-    <div class="ks-item"><span class="ks-label">Data as of</span><span class="ks-val" id="ksAge">—</span></div>
+    <div class="ks-item"><span class="ks-label">Spot</span><span class="ks-val" id="ksSpot">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">ATM</span><span class="ks-val" id="ksAtm">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">Day</span><span class="ks-val" id="ksDay">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">PCR</span><span class="ks-val" id="ksPcr">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">India VIX</span><span class="ks-val" id="ksVix">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">Max Pain</span><span class="ks-val" id="ksPain">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">Implied Fut</span><span class="ks-val" id="ksFut">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">Regime</span><span class="ks-val" id="ksRegime">n/a</span></div>
+    <div class="ks-item"><span class="ks-label">Data as of</span><span class="ks-val" id="ksAge">n/a</span></div>
   </div>
 
   <!-- COMPOSITE REGIME HERO BANNER -->
@@ -91,12 +92,12 @@
       <div>
         <div class="hero-eyebrow">
           <span class="eyebrow">Composite Market Regime</span>
-          <span id="regimeConfidence" class="pill pill-accent">Signal agreement: —</span>
+          <span id="regimeConfidence" class="pill pill-accent">Signal agreement: n/a</span>
         </div>
         <div id="regimeTitle" class="hero-title">Analyzing Market Regime...</div>
-        <div id="regimeStrategy" class="hero-sub">Strategy: —</div>
+        <div id="regimeStrategy" class="hero-sub">Strategy: n/a</div>
       </div>
-      <span id="tacticalBiasBadge" class="bias-badge">Bias: —</span>
+      <span id="tacticalBiasBadge" class="bias-badge">Bias: n/a</span>
     </div>
   </div>
 
@@ -107,7 +108,7 @@
         <div class="panel-title">
           <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>
           Live Trade Setup &amp; Tactical Action Plan
-          <span id="setupBiasBadge" class="pill pill-bull">Bias: —</span>
+          <span id="setupBiasBadge" class="pill pill-bull">Bias: n/a</span>
         </div>
         <span class="panel-note">Auto-synthesized from CPR, GEX Zero-Gamma, PCR RoC &amp; Straddle Bounds</span>
       </div>
@@ -153,16 +154,16 @@
         <div style="display: flex; align-items: center; gap: 8px;">
           <span
             style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
-            🎯 ATM Straddle Price & Intraday Expected Move Calculator
+            <span data-icon="target"></span>ATM Straddle Price & Intraday Expected Move Calculator
           </span>
           <span id="straddleAtmBadge"
             style="background: rgba(59,130,246,0.15); color: var(--accent); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">ATM:
-            —</span>
+            n/a</span>
         </div>
         <div style="display: flex; align-items: center; gap: 10px; font-size: 11px;">
           <span style="color: var(--muted);">Decay Status:</span>
           <span id="straddleDecayBadge"
-            style="padding: 2px 8px; border-radius: 4px; font-weight: 600; background: var(--surface2); color: var(--text);">—</span>
+            style="padding: 2px 8px; border-radius: 4px; font-weight: 600; background: var(--surface2); color: var(--text);">n/a</span>
         </div>
       </div>
 
@@ -173,9 +174,9 @@
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">ATM CE / PE
             Premium</div>
           <div style="font-size: 15px; font-weight: 700; color: var(--text); margin-top: 2px;">
-            <span style="color: var(--bear);" id="straddleCeLtp">CE: —</span>
+            <span style="color: var(--bear);" id="straddleCeLtp">CE: n/a</span>
             <span style="color: var(--muted); margin: 0 4px;">|</span>
-            <span style="color: var(--bull);" id="straddlePeLtp">PE: —</span>
+            <span style="color: var(--bull);" id="straddlePeLtp">PE: n/a</span>
           </div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Individual Option LTPs</div>
         </div>
@@ -183,10 +184,10 @@
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Total Straddle
             Premium</div>
-          <div id="straddleTotalLtp" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">—
+          <div id="straddleTotalLtp" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">n/a
           </div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
-            Prev session ATM: <span id="straddleOpenPrice">—</span> · <span id="straddleDayChg">—</span>
+            Prev session ATM: <span id="straddleOpenPrice">n/a</span> · <span id="straddleDayChg">n/a</span>
           </div>
         </div>
 
@@ -194,9 +195,9 @@
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Expected Move
             to Expiry</div>
           <div id="straddleExpectedMove"
-            style="font-size: 16px; font-weight: 700; color: var(--warn); margin-top: 2px;">± — pts (—%)</div>
+            style="font-size: 16px; font-weight: 700; color: var(--warn); margin-top: 2px;">± n/a pts (n/a)</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
-            <span style="font-family: monospace;">0.85 × Straddle</span> · ≈ <span id="straddleDailyMove">—</span> pts/day
+            <span style="font-family: monospace;">0.85 × Straddle</span> · ≈ <span id="straddleDailyMove">n/a</span> pts/day
           </div>
         </div>
 
@@ -204,10 +205,10 @@
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Expected
             Bounds (Expiry)</div>
           <div id="straddleRangeBounds" style="font-size: 14px; font-weight: 700; color: var(--text); margin-top: 2px;">
-            —</div>
+            n/a</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">
-            Lower <span style="color: var(--bull);" id="straddleLowerBound">—</span> to Upper <span
-              style="color: var(--bear);" id="straddleUpperBound">—</span>
+            Lower <span style="color: var(--bull);" id="straddleLowerBound">n/a</span> to Upper <span
+              style="color: var(--bear);" id="straddleUpperBound">n/a</span>
           </div>
         </div>
       </div>
@@ -215,9 +216,9 @@
       <!-- Spot Position & Expected Move Gauge -->
       <div style="background: var(--bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border);">
         <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
-          <span>Lower Bound: <strong id="gaugeLowerLabel" style="color: var(--bull);">—</strong></span>
-          <span>Spot: <strong id="gaugeSpotLabel" style="color: var(--accent);">—</strong></span>
-          <span>Upper Bound: <strong id="gaugeUpperLabel" style="color: var(--bear);">—</strong></span>
+          <span>Lower Bound: <strong id="gaugeLowerLabel" style="color: var(--bull);">n/a</strong></span>
+          <span>Spot: <strong id="gaugeSpotLabel" style="color: var(--accent);">n/a</strong></span>
+          <span>Upper Bound: <strong id="gaugeUpperLabel" style="color: var(--bear);">n/a</strong></span>
         </div>
         <div
           style="position: relative; height: 10px; background: var(--surface2); border-radius: 5px; overflow: hidden;">
@@ -240,7 +241,7 @@
         <div style="display: flex; align-items: center; gap: 8px;">
           <span
             style="font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 6px;">
-            📊 Market-Implied Expiry Probability (Breeden-Litzenberger PDF)
+            <span data-icon="bar-chart"></span>Market-Implied Expiry Probability (Breeden-Litzenberger PDF)
           </span>
           <span
             style="background: rgba(139,92,246,0.15); color: #a78bfa; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
@@ -257,7 +258,7 @@
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">Most Likely
             Expiry</div>
-          <div id="pdfModeStrike" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">—
+          <div id="pdfModeStrike" style="font-size: 18px; font-weight: 700; color: var(--accent); margin-top: 2px;">n/a
           </div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Peak Implied Density (Mode)</div>
         </div>
@@ -265,21 +266,21 @@
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">68% Confidence
             Range</div>
-          <div id="pdf68Range" style="font-size: 15px; font-weight: 700; color: var(--bull); margin-top: 2px;">—</div>
+          <div id="pdf68Range" style="font-size: 15px; font-weight: 700; color: var(--bull); margin-top: 2px;">n/a</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">1-Sigma Expected Expiry Zone</div>
         </div>
 
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">95% Confidence
             Range</div>
-          <div id="pdf95Range" style="font-size: 15px; font-weight: 700; color: var(--warn); margin-top: 2px;">—</div>
+          <div id="pdf95Range" style="font-size: 15px; font-weight: 700; color: var(--warn); margin-top: 2px;">n/a</div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">2-Sigma Tail Risk Zone</div>
         </div>
 
         <div style="background: var(--bg); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border);">
           <div style="font-size: 10px; color: var(--muted); text-transform: uppercase; font-weight: 600;">ATM ±1.5% Stay
             Probability</div>
-          <div id="pdfStayProbability" style="font-size: 18px; font-weight: 700; color: #a78bfa; margin-top: 2px;">—%
+          <div id="pdfStayProbability" style="font-size: 18px; font-weight: 700; color: #a78bfa; margin-top: 2px;">n/a
           </div>
           <div style="font-size: 10px; color: var(--muted); margin-top: 2px;">Rangebound Holding Chance</div>
         </div>
@@ -309,8 +310,8 @@
         <div style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border);">
           <div
             style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
-            <span>📈 15-30m Directional Probability</span>
-            <span id="mlDirectionConfidence" style="color: var(--accent);">Signal agreement: —</span>
+            <span class="with-ico"><span data-icon="trending-up"></span>15-30m Directional Probability</span>
+            <span id="mlDirectionConfidence" style="color: var(--accent);">Signal agreement: n/a</span>
           </div>
 
           <!-- Progress Bar -->
@@ -325,9 +326,9 @@
           </div>
 
           <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;">
-            <span style="color: var(--bull);">🚀 Bullish (+0.3%): <strong id="mlPctBull">—%</strong></span>
-            <span style="color: var(--warn);">⚖️ Neutral: <strong id="mlPctNeut">—%</strong></span>
-            <span style="color: var(--bear);">📉 Bearish (-0.3%): <strong id="mlPctBear">—%</strong></span>
+            <span class="with-ico" style="color: var(--bull);"><span data-icon="trending-up"></span>Bullish: <strong id="mlPctBull">n/a</strong></span>
+            <span class="with-ico" style="color: var(--warn);"><span data-icon="scale"></span>Neutral: <strong id="mlPctNeut">n/a</strong></span>
+            <span class="with-ico" style="color: var(--bear);"><span data-icon="trending-down"></span>Bearish: <strong id="mlPctBear">n/a</strong></span>
           </div>
         </div>
 
@@ -335,7 +336,7 @@
         <div style="background: var(--bg); padding: 12px 14px; border-radius: 6px; border: 1px solid var(--border);">
           <div
             style="font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; display: flex; justify-content: space-between;">
-            <span>⚡ Market Regime Probability</span>
+            <span class="with-ico"><span data-icon="zap"></span>Market Regime Probability</span>
             <span id="mlStateLabel" style="color: var(--accent);">Analyzing…</span>
           </div>
 
@@ -349,8 +350,8 @@
           </div>
 
           <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 600;">
-            <span style="color: #a78bfa;">💥 Breakout Expansion: <strong id="mlPctBreakout">—%</strong></span>
-            <span style="color: #3b82f6;">🎯 Rangebound Reversion: <strong id="mlPctRangebound">—%</strong></span>
+            <span class="with-ico" style="color: #a78bfa;"><span data-icon="expand"></span>Breakout Expansion: <strong id="mlPctBreakout">n/a</strong></span>
+            <span class="with-ico" style="color: #3b82f6;"><span data-icon="target"></span>Rangebound Reversion: <strong id="mlPctRangebound">n/a</strong></span>
           </div>
         </div>
       </div>
@@ -370,18 +371,18 @@
         <div class="metric-row">
           <div class="metric-item">
             <span class="label">Spot</span>
-            <span class="val acc" id="mSpot">—</span>
+            <span class="val acc" id="mSpot">n/a</span>
           </div>
           <div class="metric-item">
             <span class="label">ATM Strike</span>
-            <span class="val" id="mATM">—</span>
+            <span class="val" id="mATM">n/a</span>
           </div>
         </div>
         <div class="metric-row highlight-row">
           <div class="metric-item">
             <span class="label">Expected Range</span>
-            <span class="val acc" id="mExpectedRange" style="font-size:13px; font-weight:600;">—</span>
-            <span class="sub">Straddle: <span id="mStraddlePrice">—</span></span>
+            <span class="val acc" id="mExpectedRange" style="font-size:13px; font-weight:600;">n/a</span>
+            <span class="sub">Straddle: <span id="mStraddlePrice">n/a</span></span>
           </div>
         </div>
       </div>
@@ -394,23 +395,23 @@
         <div class="metric-row">
           <div class="metric-item">
             <span class="label">PCR (OI)</span>
-            <span class="val" id="mPCR">—</span>
-            <span class="sub" id="mPCRsub">—</span>
+            <span class="val" id="mPCR">n/a</span>
+            <span class="sub" id="mPCRsub">n/a</span>
           </div>
           <div class="metric-item">
             <div style="display:flex; align-items:center; gap:6px;">
               <span class="label" style="margin-bottom:0;">IV Skew (25Δ RR)</span>
-              <span id="volRegimeBadge" class="vol-badge" title="Volatility Regime">—</span>
+              <span id="volRegimeBadge" class="vol-badge" title="Volatility Regime">n/a</span>
             </div>
-            <span class="val" id="mIvSkew">—</span>
-            <span class="sub" id="mIvSkewSub">—</span>
+            <span class="val" id="mIvSkew">n/a</span>
+            <span class="sub" id="mIvSkewSub">n/a</span>
           </div>
         </div>
         <div class="metric-sub-stats"
           style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
-          <span>Near: <strong id="mNtmPcr">—</strong> | Vol: <strong id="mVolPcr">—</strong></span>
-          <span title="PCR change over the last 5 and 15 minutes">PCR RoC: <span id="mPcrRoc" style="font-weight: 600;">5m: —
-              | 15m: —</span></span>
+          <span>Near: <strong id="mNtmPcr">n/a</strong> | Vol: <strong id="mVolPcr">n/a</strong></span>
+          <span title="PCR change over the last 5 and 15 minutes">PCR RoC: <span id="mPcrRoc" style="font-weight: 600;">5m: n/a
+              | 15m: n/a</span></span>
         </div>
       </div>
     </div>
@@ -422,21 +423,21 @@
         <div class="metric-row">
           <div class="metric-item">
             <span class="label">Total Calls</span>
-            <span class="val bear" id="mCallOI">—</span>
-            <span class="sub" id="mCallChg">—</span>
+            <span class="val bear" id="mCallOI">n/a</span>
+            <span class="sub" id="mCallChg">n/a</span>
           </div>
           <div class="metric-item">
             <span class="label">Total Puts</span>
-            <span class="val bull" id="mPutOI">—</span>
-            <span class="sub" id="mPutChg">—</span>
+            <span class="val bull" id="mPutOI">n/a</span>
+            <span class="sub" id="mPutChg">n/a</span>
           </div>
         </div>
         <div class="metric-sub-stats"
           style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 10px;">
-          <span title="Call OI change over the last 5 and 15 minutes">CE RoC: <span id="mCallRoc" style="font-weight: 600;">5m: —
-              | 15m: —</span></span>
-          <span title="Put OI change over the last 5 and 15 minutes">PE RoC: <span id="mPutRoc" style="font-weight: 600;">5m: —
-              | 15m: —</span></span>
+          <span title="Call OI change over the last 5 and 15 minutes">CE RoC: <span id="mCallRoc" style="font-weight: 600;">5m: n/a
+              | 15m: n/a</span></span>
+          <span title="Put OI change over the last 5 and 15 minutes">PE RoC: <span id="mPutRoc" style="font-weight: 600;">5m: n/a
+              | 15m: n/a</span></span>
         </div>
       </div>
     </div>
@@ -448,34 +449,34 @@
         <div class="metric-row">
           <div class="metric-item">
             <span class="label">Max Pain</span>
-            <span class="val warn" id="mMaxPain">—</span>
+            <span class="val warn" id="mMaxPain">n/a</span>
             <span class="sub">Expiry target</span>
           </div>
           <div class="metric-item">
             <span class="label">Last Updated</span>
-            <span class="val" id="mTime" style="font-size:12px;">—</span>
+            <span class="val" id="mTime" style="font-size:12px;">n/a</span>
           </div>
         </div>
         <div class="metric-row compact-row">
           <div class="metric-item">
             <span class="label">Max Call (Res)</span>
-            <span class="val-small bear" id="mMaxCall">—</span>
-            <span class="sub" style="font-size: 8px;">Strength: <span id="mResStrength">—</span>%</span>
+            <span class="val-small bear" id="mMaxCall">n/a</span>
+            <span class="sub" style="font-size: 8px;">Strength: <span id="mResStrength">n/a</span>%</span>
           </div>
           <div class="metric-item">
             <span class="label">Max Put (Sup)</span>
-            <span class="val-small bull" id="mMaxPut">—</span>
-            <span class="sub" style="font-size: 8px;">Strength: <span id="mSupStrength">—</span>%</span>
+            <span class="val-small bull" id="mMaxPut">n/a</span>
+            <span class="sub" style="font-size: 8px;">Strength: <span id="mSupStrength">n/a</span>%</span>
           </div>
         </div>
         <div class="metric-row compact-row">
           <div class="metric-item">
             <span class="label">Top Call Walls</span>
-            <span class="val-small bear" id="mWallsCall" style="font-size:11px;">—</span>
+            <span class="val-small bear" id="mWallsCall" style="font-size:11px;">n/a</span>
           </div>
           <div class="metric-item">
             <span class="label">Top Put Walls</span>
-            <span class="val-small bull" id="mWallsPut" style="font-size:11px;">—</span>
+            <span class="val-small bull" id="mWallsPut" style="font-size:11px;">n/a</span>
           </div>
         </div>
       </div>
@@ -488,18 +489,18 @@
         <div class="metric-row">
           <div class="metric-item">
             <span class="label">Pivot (P)</span>
-            <span class="val acc" id="mCprPivot">—</span>
-            <span class="sub">TC: <span id="mCprTc">—</span> | BC: <span id="mCprBc">—</span></span>
+            <span class="val acc" id="mCprPivot">n/a</span>
+            <span class="sub">TC: <span id="mCprTc">n/a</span> | BC: <span id="mCprBc">n/a</span></span>
           </div>
           <div class="metric-item">
             <span class="label">CPR Type</span>
-            <span class="val" id="mCprType" style="font-size:13px; font-weight:600;">—</span>
-            <span class="sub">Width: <span id="mCprWidth">—</span> pts</span>
+            <span class="val" id="mCprType" style="font-size:13px; font-weight:600;">n/a</span>
+            <span class="sub">Width: <span id="mCprWidth">n/a</span> pts</span>
           </div>
         </div>
         <div class="metric-sub-stats" style="margin-top:4px;">
-          R1: <span id="mCprR1" class="bear">—</span> | S1: <span id="mCprS1" class="bull">—</span> | R2: <span
-            id="mCprR2" class="bear">—</span> | S2: <span id="mCprS2" class="bull">—</span>
+          R1: <span id="mCprR1" class="bear">n/a</span> | S1: <span id="mCprS1" class="bull">n/a</span> | R2: <span
+            id="mCprR2" class="bear">n/a</span> | S2: <span id="mCprS2" class="bull">n/a</span>
         </div>
       </div>
     </div>
@@ -511,17 +512,17 @@
         <div class="metric-row">
           <div class="metric-item">
             <span class="label">Net Market GEX</span>
-            <span class="val" id="mNetGex">—</span>
-            <span class="sub" id="mGexRegime">—</span>
+            <span class="val" id="mNetGex">n/a</span>
+            <span class="sub" id="mGexRegime">n/a</span>
           </div>
           <div class="metric-item">
             <span class="label">Zero-Gamma Level</span>
-            <span class="val warn" id="mZeroGamma">—</span>
-            <span class="sub" id="mGexDist">—</span>
+            <span class="val warn" id="mZeroGamma">n/a</span>
+            <span class="sub" id="mGexDist">n/a</span>
           </div>
         </div>
         <div class="metric-sub-stats" style="margin-top:4px;">
-          Call GEX: <span id="mCallGex" class="bear">—</span> Cr | Put GEX: <span id="mPutGex" class="bull">—</span> Cr
+          Call GEX: <span id="mCallGex" class="bear">n/a</span> Cr | Put GEX: <span id="mPutGex" class="bull">n/a</span> Cr
         </div>
       </div>
     </div>
@@ -572,7 +573,7 @@
         <div class="panel-title">
           <svg class="ico" viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 8-9M3 21h18"/></svg>
           Intraday Timeline
-          <span id="historyChip" class="pill pill-accent">History: —</span>
+          <span id="historyChip" class="pill pill-accent">History: n/a</span>
         </div>
         <label class="panel-note" style="display:flex; align-items:center; gap:6px;">
           Overlay
@@ -602,8 +603,8 @@
     <div class="pcr-track">
       <div class="pcr-fill" id="pcrFill" style="width:50%"></div>
     </div>
-    <span class="pcr-val" id="pcrVal">—</span>
-    <span class="pcr-sent" id="pcrSent">—</span>
+    <span class="pcr-val" id="pcrVal">n/a</span>
+    <span class="pcr-sent" id="pcrSent">n/a</span>
     <span style="margin-left:auto; color:var(--muted); font-size:10px;">Bullish &gt;1.2 · Neutral 0.8–1.2 · Bearish
       &lt;0.8</span>
   </div>
@@ -611,7 +612,7 @@
   <!-- Expiry info -->
   <div class="expiry-row">
     <span>Viewing expiry:</span>
-    <span class="expiry-badge" id="expiryLabel">—</span>
+    <span class="expiry-badge" id="expiryLabel">n/a</span>
     <span>| ±10 strikes around ATM | All OI values in contracts</span>
   </div>
 

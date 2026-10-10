@@ -1866,3 +1866,74 @@ body.exporting-pdf #alertToasts {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ═════════ Inline icons ═════════ */
+.ico {
+  vertical-align: -2px;
+}
+
+[data-icon],
+.theme-ico {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.with-ico {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.theme-ico {
+  color: var(--muted);
+}
+
+.pill .ico,
+.bias-badge .ico,
+.anomaly-badge .ico,
+#straddleDecayBadge .ico {
+  margin-right: 4px;
+  width: 12px;
+  height: 12px;
+}
+
+.hero-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-title .ico {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.flow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.flow-chip .ico {
+  width: 12px;
+  height: 12px;
+}
+
+@keyframes icoSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ico.spin {
+  animation: icoSpin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ico.spin {
+    animation: none;
+  }
+}

@@ -43,7 +43,7 @@ const MAX_STRIKE_DIST = 0.03;     // flow/spike alerts only for strikes within 3
 const CONFIRM_SNAPSHOTS = 2;      // a state change must hold for this many consecutive snapshots to count
 const MAX_BATCH_TOASTS = 2;       // more loud events than this in one snapshot collapse into one summary
 
-const fmt = n => (typeof n === 'number' ? Math.round(n).toLocaleString('en-IN') : '—');
+const fmt = n => (typeof n === 'number' ? Math.round(n).toLocaleString('en-IN') : 'n/a');
 
 export function pcrZone(pcr, hi, lo) {
   return pcr > hi ? 'bull' : pcr < lo ? 'bear' : 'neutral';
@@ -253,7 +253,7 @@ export function evaluateRules(prev, d, ctx = {}, settings = DEFAULT_SETTINGS) {
         key: `gex:${regime}`,
         severity: 'high',
         title: `Gamma regime flipped to ${neg ? 'NEGATIVE' : 'POSITIVE'}`,
-        body: neg ? 'Dealer hedging now amplifies moves — expect faster, trendier action.' : 'Dealer hedging now dampens moves — expect mean reversion.'
+        body: neg ? 'Dealer hedging now amplifies moves. Expect faster, trendier action.' : 'Dealer hedging now dampens moves. Expect mean reversion.'
       });
     }
   }
